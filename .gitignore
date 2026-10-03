@@ -1,4 +1,6 @@
 bin/
+bin_save/
 examples/
 obj/
 setenv
+compile_flags.txt

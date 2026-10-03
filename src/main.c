@@ -2,22 +2,27 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <ctype.h>
 
-#define MAX_LINE_SIZE 1024
+#include "tinymake_log.h"
+#include "tinymake_string.h"
+#include "tinymake_path.h"
+
+#define MAX_LINE_SIZE 4096
 #define MAX_C_FILES 64
-#define MAX_FILE_NAME 256
+#define MAX_FILE_NAME_SIZE 256
 
-struct build_context_t
+typedef struct
 {
     char compiler[32];
     char compile_flags[MAX_LINE_SIZE];
     char includes[64];
-    char binary_name[MAX_FILE_NAME];
-    char c_files[MAX_C_FILES][MAX_FILE_NAME];
+    char binary_name[MAX_FILE_NAME_SIZE];
+    char c_files[MAX_C_FILES][MAX_FILE_NAME_SIZE];
     size_t c_files_count;
-};
+} build_context_t;
 
-size_t parse_line(char* line, char* tokens[])
+size_t tokenize_line(char* line, char* tokens[])
 {
     char* save_buffer;
     size_t token_count = 0;
@@ -29,12 +34,24 @@ size_t parse_line(char* line, char* tokens[])
     return token_count;
 }
 
-int parse_build_file(struct build_context_t* ctx)
+char* parse_key_value_line(const char* line)
+{
+    char* equal_sign = strchr(line, '=');
+    if(equal_sign == NULL)
+    {
+        return NULL;
+    }
+    char* value = trim_whitespaces(equal_sign + 1);
+
+    return value;
+}
+
+int parse_build_file(build_context_t* ctx)
 {
     FILE* f = fopen("build.txt", "r");
     if(f == NULL)
     {
-        printf("[ERROR] Could not open the build file ('build.txt')\n");
+        log_msg(ERROR, "Could not open the build file ('build.txt')");
         return -1;
     }
 
@@ -42,89 +59,70 @@ int parse_build_file(struct build_context_t* ctx)
     while(fgets(line, sizeof(line), f))
     {
         // Commentaires et lignes vides
-        if(line[0] == '#' || line[0] == ' ' || line[0] == '\n')
+        if(line[0] == '#' || isspace((unsigned char) line[0]))
         {
             continue;
         }
 
-        char* tokens[MAX_C_FILES];
-        char line_to_parse[MAX_LINE_SIZE];
-        snprintf(line_to_parse, sizeof(line_to_parse), "%s", line);
-        size_t token_count = parse_line(line_to_parse, tokens);
+        char* trimmed_line = trim_whitespaces(line);
 
-        if(strcmp(tokens[0], "cc") == 0)
+        char* line_cursor;
+        char* start_token = strtok_r(trimmed_line, " ", &line_cursor);
+
+        if(strcmp(start_token, "cc") == 0)
         {
-            char* equal_sign = strchr(line, '=');
-            if(equal_sign == NULL)
+            char* compiler = parse_key_value_line(line_cursor);
+            if(compiler == NULL)
             {
-                printf("[ERROR] Badly formatted 'cc' line: missing '='\n");
+                log_msg(ERROR, "Badly formatted 'cc' line");
                 return -1;
             }
-            char* compiler = equal_sign + 1;
-            if(compiler[0] == ' ')
-            {
-                compiler++;
-            }
 
-            size_t s = snprintf(ctx->compiler, sizeof(ctx->compiler), "%s", compiler);
-            if(ctx->compiler[s - 1] == '\n')
-            {
-                ctx->compiler[s - 1] = '\0';
-            }
-            printf("Compiler: %s\n", ctx->compiler);
+            snprintf(ctx->compiler, sizeof(ctx->compiler), "%s", compiler);
+            log_msg(DEBUG, "Compiler: %s", ctx->compiler);
         }
-        else if(strcmp(tokens[0], "cflags") == 0)
+        else if(strcmp(start_token, "cflags") == 0)
         {
-            char* equal_sign = strchr(line, '=');
-            if(equal_sign == NULL)
+            char* flags = parse_key_value_line(line_cursor);
+            if(flags == NULL)
             {
-                printf("[ERROR] Badly formatted 'cflags' line: missing '='\n");
+                log_msg(ERROR, "Badly formatted 'cflags' line");
                 return -1;
             }
-            char* flags = equal_sign + 1;
-            if(flags[0] == ' ')
-            {
-                flags++;
-            }
 
-            size_t s = snprintf(ctx->compile_flags, sizeof(ctx->compile_flags), "%s", flags);
-            if(ctx->compile_flags[s - 1] == '\n')
-            {
-                ctx->compile_flags[s - 1] = '\0';
-            }
-            printf("Compile flags: %s\n", ctx->compile_flags);
+            snprintf(ctx->compile_flags, sizeof(ctx->compile_flags), "%s", flags);
+            log_msg(DEBUG, "Compile flags: %s", ctx->compile_flags);
         }
-        else if(strcmp(tokens[0], "includes") == 0)
+        else if(strcmp(start_token, "includes") == 0)
         {
-            char* equal_sign = strchr(line, '=');
-            if(equal_sign == NULL)
+            char* includes = parse_key_value_line(line_cursor);
+            if(includes == NULL)
             {
-                printf("[ERROR] Badly formatted 'includes' line: missing '='\n");
+                log_msg(ERROR, "Badly formatted 'includes' line");
                 return -1;
             }
-            char* includes = equal_sign + 1;
-            if(includes[0] == ' ')
-            {
-                includes++;
-            }
 
-            size_t s = snprintf(ctx->includes, sizeof(ctx->includes), "%s", includes);
-            if(ctx->includes[s - 1] == '\n')
-            {
-                ctx->includes[s - 1] = '\0';
-            }
-            printf("Include directory: %s\n", ctx->includes);
+            snprintf(ctx->includes, sizeof(ctx->includes), "%s", includes);
+            log_msg(DEBUG, "Include directory: %s", ctx->includes);
         }
-        else if(strcmp(tokens[0], "binary") == 0)
+        else if(strcmp(start_token, "binary") == 0)
         {
-            size_t s = snprintf(ctx->binary_name, sizeof(ctx->binary_name), "%s", tokens[1]);
+            char* target_name = strtok_r(NULL, " ", &line_cursor);
+            size_t s = snprintf(ctx->binary_name, sizeof(ctx->binary_name), "%s", target_name);
             // On supprime le ':' à la fin du nom de l'exécutable
             ctx->binary_name[s - 1] = '\0';
-            for(size_t i = 2; i < token_count; ++i)
+            log_msg(DEBUG, "Target name: %s", ctx->binary_name);
+
+            char* tokens[MAX_C_FILES];
+            size_t token_count = tokenize_line(line_cursor, tokens);
+            ctx->c_files_count = token_count;
+            log_msg(DEBUG, "%d C files to compile", ctx->c_files_count);
+
+            for(size_t i = 0; i < token_count; ++i)
             {
-                snprintf(ctx->c_files[i-2], sizeof(ctx->c_files[i-2]), "%s", tokens[i]);
+                snprintf(ctx->c_files[i], sizeof(ctx->c_files[i]), "%s", tokens[i]);
+                log_msg(DEBUG, "File to compile: %s", ctx->c_files[i]);
             }
-            ctx->c_files_count = token_count - 2;
         }
     }
 
@@ -132,8 +130,10 @@ int parse_build_file(struct build_context_t* ctx)
     return 0;
 }
 
-int generate_object_files(struct build_context_t* ctx)
+int generate_object_files(build_context_t* ctx)
 {
+    int rc = 0;
+
     char command[2048];
     char compiler_invokation[1024] = "";
     strcat(compiler_invokation, ctx->compiler);
@@ -152,47 +152,40 @@ int generate_object_files(struct build_context_t* ctx)
 
     for(size_t i = 0; i < ctx->c_files_count; ++i)
     {
-        char file_name[MAX_FILE_NAME];
-        strncpy(file_name, ctx->c_files[i], sizeof(file_name) - 1);
-        char* last_dot = strrchr(file_name, '.');
-        if(last_dot != NULL)
-        {
-            *last_dot = '\0';
-        }
+        char file_name[MAX_FILE_NAME_SIZE];
+        get_file_name_without_ext(ctx->c_files[i], file_name);
 
-        snprintf(command, sizeof(command), "%s -c %s.c -o %s.o", compiler_invokation, file_name, file_name);
+        snprintf(command, sizeof(command), "%s -c %s -o obj/%s.o", compiler_invokation, ctx->c_files[i], file_name);
 
-        printf("Command: %s\n", command);
-        int rc = system(command);
+        log_msg(INFO, "Compiling: %s", ctx->c_files[i]);
+        log_msg(DEBUG, "Compile command: %s", command);
+        rc = system(command);
     }
 
-    return 0;
+    return rc;
 }
 
-int link_object_files(struct build_context_t* ctx)
+int link_object_files(build_context_t* ctx)
 {
     char command[2048];
-    size_t command_size = snprintf(command, sizeof(command), "gcc -o %s ", ctx->binary_name);
+    size_t command_size = snprintf(command, sizeof(command), "%s -o bin/%s ", ctx->compiler, ctx->binary_name);
+
     for(size_t i = 0; i < ctx->c_files_count; ++i)
     {
-        char file_name[MAX_FILE_NAME];
-        strncpy(file_name, ctx->c_files[i], sizeof(file_name) - 1);
-        char* last_dot = strrchr(file_name, '.');
-        if(last_dot != NULL)
-        {
-            *last_dot = '\0';
-        }
+        char file_name[MAX_FILE_NAME_SIZE];
+        get_file_name_without_ext(ctx->c_files[i], file_name);
 
-        char object_file_name[MAX_FILE_NAME];
-        size_t file_name_size = snprintf(object_file_name, sizeof(object_file_name), "%s.o", file_name);
+        char obj_file[MAX_FILE_NAME_SIZE];
+        size_t obj_file_size = snprintf(obj_file, sizeof(obj_file), "obj/%s.o", file_name);
 
-        memcpy(command + command_size, object_file_name, file_name_size);
-        command_size += file_name_size + 1;
+        memcpy(command + command_size, obj_file, obj_file_size);
+        command_size += obj_file_size + 1;
         command[command_size - 1] = ' ';
         command[command_size] = '\0';
     }
 
-    printf("Link command: %s\n", command);
+    log_msg(INFO, "Linking...");
+    log_msg(DEBUG, "Link command: %s", command);
     int rc = system(command);
 
     return rc;
@@ -200,7 +193,9 @@ int link_object_files(struct build_context_t* ctx)
 
 int main()
 {
-    struct build_context_t ctx = {0};
+    log_msg(INFO, "Starting build...");
+
+    build_context_t ctx = {0};
     if(parse_build_file(&ctx) != 0)
     {
         return -1;
@@ -215,6 +210,8 @@ int main()
     {
         return -1;
     }
+
+    log_msg(INFO, "Build has ended");
 
     return 0;
 }

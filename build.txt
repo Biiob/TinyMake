@@ -1,5 +1,5 @@
-cc     = gcc
-cflags = -Wall -Wextra -g -O2
+cc       = gcc
+cflags   = -Wall -Wextra -g -O2
 includes = include
 
-binary tinymake: src/main.c
+binary tinymake: src/main.c src/tinymake_log.c src/tinymake_string.c src/tinymake_path.c
