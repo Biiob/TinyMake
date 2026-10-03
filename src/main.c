@@ -11,12 +11,14 @@
 #define MAX_LINE_SIZE 4096
 #define MAX_C_FILES 64
 #define MAX_FILE_NAME_SIZE 256
+#define MAX_INCLUDE_DIRECTORIES 64
 
 typedef struct
 {
     char compiler[32];
     char compile_flags[MAX_LINE_SIZE];
-    char includes[64];
+    char includes[MAX_INCLUDE_DIRECTORIES][MAX_FILE_NAME_SIZE];
+    size_t includes_count;
     char binary_name[MAX_FILE_NAME_SIZE];
     char c_files[MAX_C_FILES][MAX_FILE_NAME_SIZE];
     size_t c_files_count;
@@ -102,8 +104,16 @@ int parse_build_file(build_context_t* ctx)
                 return -1;
             }
 
-            snprintf(ctx->includes, sizeof(ctx->includes), "%s", includes);
-            log_msg(DEBUG, "Include directory: %s", ctx->includes);
+            char* tokens[MAX_INCLUDE_DIRECTORIES];
+            size_t token_count = tokenize_line(includes, tokens);
+            ctx->includes_count = token_count;
+            log_msg(DEBUG, "%d include directories", ctx->includes_count);
+
+            for(size_t i = 0; i < token_count; ++i)
+            {
+                snprintf(ctx->includes[i], sizeof(ctx->includes[i]), "%s", tokens[i]);
+                log_msg(DEBUG, "Include directory: %s", ctx->includes[i]);
+            }
         }
         else if(strcmp(start_token, "binary") == 0)
         {
@@ -143,10 +153,11 @@ int generate_object_files(build_context_t* ctx)
         strcat(compiler_invokation, ctx->compile_flags);
         strcat(compiler_invokation, " ");
     }
-    if(ctx->includes[0] != '\0')
+
+    for(size_t i = 0; i < ctx->includes_count; ++i)
     {
         strcat(compiler_invokation, "-I");
-        strcat(compiler_invokation, ctx->includes);
+        strcat(compiler_invokation, ctx->includes[i]);
         strcat(compiler_invokation, " ");
     }
 
