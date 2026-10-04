@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <sys/stat.h>
 
 #include "tinymake_log.h"
 #include "tinymake_string.h"
@@ -22,6 +23,7 @@ typedef struct
     char binary_name[MAX_FILE_NAME_SIZE];
     char c_files[MAX_C_FILES][MAX_FILE_NAME_SIZE];
     size_t c_files_count;
+    bool has_new_obj_file;
 } build_context_t;
 
 size_t tokenize_line(char* line, char* tokens[])
@@ -166,11 +168,30 @@ int generate_object_files(build_context_t* ctx)
         char file_name[MAX_FILE_NAME_SIZE];
         get_file_name_without_ext(ctx->c_files[i], file_name);
 
-        snprintf(command, sizeof(command), "%s -c %s -o obj/%s.o", compiler_invokation, ctx->c_files[i], file_name);
+        char obj_file[MAX_FILE_NAME_SIZE + 6];
+        snprintf(obj_file, sizeof(obj_file), "obj/%s.o", file_name);
 
-        log_msg(INFO, "Compiling: %s", ctx->c_files[i]);
-        log_msg(DEBUG, "Compile command: %s", command);
-        rc = system(command);
+        struct stat c_file_stat;
+        struct stat o_file_stat;
+
+        if(stat(ctx->c_files[i], &c_file_stat) != 0)
+        {
+            log_msg(ERROR, "Could not find or access the following file: %s", ctx->c_files[i]);
+        }
+
+        if(stat(obj_file, &o_file_stat) == 0 && o_file_stat.st_mtim.tv_sec > c_file_stat.st_mtim.tv_sec)
+        {
+            log_msg(INFO, "Skipping compilation of: %s", ctx->c_files[i]);
+        }
+        else
+        {
+            snprintf(command, sizeof(command), "%s -c %s -o %s", compiler_invokation, ctx->c_files[i], obj_file);
+            log_msg(INFO, "Compiling: %s", ctx->c_files[i]);
+            log_msg(DEBUG, "Compile command: %s", command);
+            rc = system(command);
+
+            ctx->has_new_obj_file = true;
+        }
     }
 
     return rc;
@@ -179,6 +200,17 @@ int generate_object_files(build_context_t* ctx)
 int link_object_files(build_context_t* ctx)
 {
     char command[2048];
+
+    char binary_path[MAX_FILE_NAME_SIZE + 12];
+    snprintf(binary_path, sizeof(binary_path), "bin/%s", ctx->binary_name);
+
+    struct stat s;
+    if(!ctx->has_new_obj_file && stat(binary_path, &s) == 0)
+    {
+        log_msg(INFO, "Nothing to link. Skipping...");
+        return 0;
+    }
+
     size_t command_size = snprintf(command, sizeof(command), "%s -o bin/%s ", ctx->compiler, ctx->binary_name);
 
     for(size_t i = 0; i < ctx->c_files_count; ++i)
