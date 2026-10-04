@@ -7,6 +7,16 @@
 #include "tinymake_parser.h"
 #include "tinymake_string.h"
 
+int create_needed_directories()
+{
+    if(mkdir(BIN_DIR, 0755) == -1 || mkdir(OBJ_DIR, 0755) == -1)
+    {
+        log_msg(ERROR, "Could not create binary or object directories");
+        return -1;
+    }
+    return 0;
+}
+
 int generate_object_files(build_context_t* ctx)
 {
     int rc = 0;
