@@ -1,17 +1,20 @@
 #include <string.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <errno.h>
+#include <unistd.h>
 
 #include "tinymake_engine.h"
+#include "tinymake_constants.h"
 #include "tinymake_log.h"
 #include "tinymake_parser.h"
 #include "tinymake_string.h"
 
 int create_needed_directories()
 {
-    if(mkdir(BIN_DIR, 0755) == -1 || mkdir(OBJ_DIR, 0755) == -1)
+    if((mkdir(BIN_DIR, 0755) == -1 && errno != EEXIST) || (mkdir(OBJ_DIR, 0755) == -1 && errno != EEXIST))
     {
-        log_msg(ERROR, "Could not create binary or object directories");
+        log_msg(ERROR, "Could not create binary or object directories. Error code: %d", errno);
         return -1;
     }
     return 0;
@@ -19,8 +22,6 @@ int create_needed_directories()
 
 int generate_object_files(build_context_t* ctx)
 {
-    int rc = 0;
-
     char command[2048];
     char compiler_invokation[1024] = "";
     strcat(compiler_invokation, ctx->compiler);
@@ -37,25 +38,56 @@ int generate_object_files(build_context_t* ctx)
         strcat(compiler_invokation, ctx->includes[i]);
     }
 
+    char log_name[MAX_FILE_NAME_SIZE] = ".tinymake_log_XXXXXX";
+    int fd = mkstemp(log_name);
+    if(fd == -1)
+    {
+        perror("mkstemp");
+        return -1;
+    }
+
+    FILE* log = fdopen(fd, "w");
+    if(log == NULL)
+    {
+        perror("fdopen");
+        close(fd);
+        unlink(log_name);
+        return -1;
+    }
+
+    int rc = 0;
     for(size_t i = 0; i < ctx->compile_files_count; ++i)
     {
-        if(should_recompile(&ctx->compile_files[i]))
+        snprintf(command, sizeof(command), "%s -MMD -MF %s -c %s -o %s", compiler_invokation,
+                                                                         ctx->compile_files[i].d_path,
+                                                                         ctx->compile_files[i].c_path,
+                                                                         ctx->compile_files[i].o_path);
+        if(should_recompile(&ctx->compile_files[i], command))
         {
-            snprintf(command, sizeof(command), "%s -MMD -MF %s -c %s -o %s", compiler_invokation,
-                                                                             ctx->compile_files[i].d_path,
-                                                                             ctx->compile_files[i].c_path,
-                                                                             ctx->compile_files[i].o_path);
             log_msg(INFO, "Compiling: %s", ctx->compile_files[i].c_path);
             log_msg(DEBUG, "Compile command: %s", command);
             rc = system(command);
-
-            ctx->has_new_obj_file = true;
         }
         else
         {
             log_msg(INFO, "Skipping compilation of: %s", ctx->compile_files[i].c_path);
         }
+
+        size_t command_length = strlen(command);
+        size_t bytes_written = fwrite(command, sizeof(char), command_length, log);
+        if(bytes_written != command_length)
+        {
+            log_msg(WARN, "Log line might be incomplete");
+        }
+        putc('\n', log);
+
+        ctx->has_new_obj_file = true;
     }
+
+    fflush(log);
+    fsync(fileno(log));
+    fclose(log);
+    rename(log_name, ".tinymake_log");
 
     return rc;
 }
@@ -86,12 +118,13 @@ int link_object_files(build_context_t* ctx)
     return rc;
 }
 
-bool should_recompile(compile_file_t* file)
+bool should_recompile(compile_file_t* file, const char* command)
 {
     struct stat c_file_stat;
     if(stat(file->c_path, &c_file_stat) != 0)
     {
         log_msg(ERROR, "Could not find or access the following file: %s", file->c_path);
+        return false;
     }
 
     struct stat o_file_stat = {0};
@@ -138,6 +171,24 @@ bool should_recompile(compile_file_t* file)
         }
 
         is_first_line = false;
+    }
+    fclose(dep);
+
+    FILE* log = fopen(".tinymake_log", "r");
+    bool has_command_changed = true;
+    while(fgets(line, sizeof(line), log))
+    {
+        if(strcmp(trim_whitespaces(line), command) == 0)
+        {
+            has_command_changed = false;
+            break;
+        }
+    }
+    fclose(log);
+
+    if(has_command_changed)
+    {
+        return true;
     }
 
     return false;

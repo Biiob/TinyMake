@@ -1,6 +1,10 @@
 bin/
-bin_save/
-examples/
 obj/
+
+bin_save/
+
+examples/
+
 setenv
 compile_flags.txt
+.tinymake_log
