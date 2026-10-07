@@ -9,5 +9,6 @@
 #define MAX_PATH_NAME_SIZE 256
 #define MAX_FILE_NAME_SIZE 64
 #define MAX_INCLUDE_DIRECTORIES 64
+#define MAX_TARGETS 8
 
 #endif

@@ -48,6 +48,8 @@ int parse_build_file(build_context_t* ctx)
         return -1;
     }
 
+    ctx->targets_count = 0;
+
     char line[MAX_LINE_SIZE];
     while(fgets(line, sizeof(line), f))
     {
@@ -108,22 +110,27 @@ int parse_build_file(build_context_t* ctx)
         }
         else if(strcasecmp(start_token, "binary") == 0)
         {
+            target_t* current_target = &ctx->targets[ctx->targets_count];
+            current_target->type = BINARY;
+
             char* target_name = strtok_r(NULL, " ", &line_cursor);
-            size_t s = snprintf(ctx->binary_name, sizeof(ctx->binary_name), BIN_DIR "/%s", target_name);
+            size_t s = snprintf(current_target->name, sizeof(current_target->name), BIN_DIR "/%s", target_name);
             // On supprime le ':' à la fin du nom de l'exécutable
-            ctx->binary_name[s - 1] = '\0';
-            log_msg(DEBUG, "Target name: %s", ctx->binary_name);
+            current_target->name[s - 1] = '\0';
+            log_msg(DEBUG, "Target name: %s", current_target->name);
 
             char* tokens[MAX_C_FILES];
             size_t token_count = tokenize_line(line_cursor, tokens);
-            ctx->compile_files_count = token_count;
-            log_msg(DEBUG, "%d C files to compile", ctx->compile_files_count);
+            current_target->source_files_count = token_count;
+            log_msg(DEBUG, "%d C files to compile", current_target->source_files_count);
 
             for(size_t i = 0; i < token_count; ++i)
             {
-                create_compile_file(tokens[i], &ctx->compile_files[i]);
-                log_msg(DEBUG, "File to compile: %s", ctx->compile_files[i].c_path);
+                create_compile_file(tokens[i], &current_target->source_files[i]);
+                log_msg(DEBUG, "File to compile: %s", current_target->source_files[i].c_path);
             }
+
+            ctx->targets_count++;
         }
     }
 

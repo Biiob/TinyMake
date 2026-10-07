@@ -9,6 +9,7 @@
 #include "tinymake_log.h"
 #include "tinymake_parser.h"
 #include "tinymake_string.h"
+#include "tinymake_types.h"
 
 int create_needed_directories()
 {
@@ -20,7 +21,7 @@ int create_needed_directories()
     return 0;
 }
 
-int generate_object_files(build_context_t* ctx)
+int generate_object_files(build_context_t* ctx, target_t* target)
 {
     char command[2048];
     char compiler_invokation[1024] = "";
@@ -56,21 +57,21 @@ int generate_object_files(build_context_t* ctx)
     }
 
     int rc = 0;
-    for(size_t i = 0; i < ctx->compile_files_count; ++i)
+    for(size_t i = 0; i < target->source_files_count; ++i)
     {
         snprintf(command, sizeof(command), "%s -MMD -MF %s -c %s -o %s", compiler_invokation,
-                                                                         ctx->compile_files[i].d_path,
-                                                                         ctx->compile_files[i].c_path,
-                                                                         ctx->compile_files[i].o_path);
-        if(should_recompile(&ctx->compile_files[i], command))
+                                                                         target->source_files[i].d_path,
+                                                                         target->source_files[i].c_path,
+                                                                         target->source_files[i].o_path);
+        if(should_recompile(&target->source_files[i], command))
         {
-            log_msg(INFO, "Compiling: %s", ctx->compile_files[i].c_path);
+            log_msg(INFO, "Compiling: %s", target->source_files[i].c_path);
             log_msg(DEBUG, "Compile command: %s", command);
             rc = system(command);
         }
         else
         {
-            log_msg(INFO, "Skipping compilation of: %s", ctx->compile_files[i].c_path);
+            log_msg(INFO, "Skipping compilation of: %s", target->source_files[i].c_path);
         }
 
         size_t command_length = strlen(command);
@@ -81,7 +82,7 @@ int generate_object_files(build_context_t* ctx)
         }
         putc('\n', log);
 
-        ctx->has_new_obj_file = true;
+        target->should_relink = true;
     }
 
     fflush(log);
@@ -92,23 +93,23 @@ int generate_object_files(build_context_t* ctx)
     return rc;
 }
 
-int link_object_files(build_context_t* ctx)
+int link_object_files(build_context_t* ctx, target_t* target)
 {
     char command[2048];
 
     struct stat s;
-    if(!ctx->has_new_obj_file && stat(ctx->binary_name, &s) == 0)
+    if(!target->should_relink && stat(target->name, &s) == 0)
     {
         log_msg(INFO, "Nothing to link. Skipping...");
         return 0;
     }
 
-    snprintf(command, sizeof(command), "%s -o %s", ctx->compiler, ctx->binary_name);
+    snprintf(command, sizeof(command), "%s -o %s", ctx->compiler, target->name);
 
-    for(size_t i = 0; i < ctx->compile_files_count; ++i)
+    for(size_t i = 0; i < target->source_files_count; ++i)
     {
         strcat(command, " ");
-        strcat(command, ctx->compile_files[i].o_path);
+        strcat(command, target->source_files[i].o_path);
     }
 
     log_msg(INFO, "Linking...");

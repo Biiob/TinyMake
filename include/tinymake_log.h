@@ -1,8 +1,8 @@
 #ifndef TINYMAKE_LOG
 #define TINYMAKE_LOG
 
-typedef enum { DEBUG, INFO, WARN, ERROR } log_level;
+typedef enum { DEBUG, INFO, WARN, ERROR } log_level_t;
 
-void log_msg(log_level l, const char* msg, ...);
+void log_msg(log_level_t l, const char* msg, ...);
 
 #endif
