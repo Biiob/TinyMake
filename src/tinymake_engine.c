@@ -11,6 +11,10 @@
 #include "tinymake_string.h"
 #include "tinymake_types.h"
 
+static int g_log_fd = 0;
+static FILE* g_log_file = NULL;
+static char g_log_name[MAX_FILE_NAME_SIZE] = ".tinymake_log_XXXXXX";
+
 int create_needed_directories()
 {
     if((mkdir(BIN_DIR, 0755) == -1 && errno != EEXIST) || (mkdir(OBJ_DIR, 0755) == -1 && errno != EEXIST))
@@ -39,23 +43,6 @@ int generate_object_files(build_context_t* ctx, target_t* target)
         strcat(compiler_invokation, ctx->includes[i]);
     }
 
-    char log_name[MAX_FILE_NAME_SIZE] = ".tinymake_log_XXXXXX";
-    int fd = mkstemp(log_name);
-    if(fd == -1)
-    {
-        perror("mkstemp");
-        return -1;
-    }
-
-    FILE* log = fdopen(fd, "w");
-    if(log == NULL)
-    {
-        perror("fdopen");
-        close(fd);
-        unlink(log_name);
-        return -1;
-    }
-
     int rc = 0;
     for(size_t i = 0; i < target->source_files_count; ++i)
     {
@@ -68,6 +55,7 @@ int generate_object_files(build_context_t* ctx, target_t* target)
             log_msg(INFO, "Compiling: %s", target->source_files[i].c_path);
             log_msg(DEBUG, "Compile command: %s", command);
             rc = system(command);
+            target->should_relink = true;
         }
         else
         {
@@ -75,20 +63,13 @@ int generate_object_files(build_context_t* ctx, target_t* target)
         }
 
         size_t command_length = strlen(command);
-        size_t bytes_written = fwrite(command, sizeof(char), command_length, log);
+        size_t bytes_written = fwrite(command, sizeof(char), command_length, g_log_file);
         if(bytes_written != command_length)
         {
             log_msg(WARN, "Log line might be incomplete");
         }
-        putc('\n', log);
-
-        target->should_relink = true;
+        putc('\n', g_log_file);
     }
-
-    fflush(log);
-    fsync(fileno(log));
-    fclose(log);
-    rename(log_name, ".tinymake_log");
 
     return rc;
 }
@@ -96,13 +77,6 @@ int generate_object_files(build_context_t* ctx, target_t* target)
 int link_object_files(build_context_t* ctx, target_t* target)
 {
     char command[2048];
-
-    struct stat s;
-    if(!target->should_relink && stat(target->name, &s) == 0)
-    {
-        log_msg(INFO, "Nothing to link. Skipping...");
-        return 0;
-    }
 
     snprintf(command, sizeof(command), "%s -o %s", ctx->compiler, target->name);
 
@@ -112,9 +86,27 @@ int link_object_files(build_context_t* ctx, target_t* target)
         strcat(command, target->source_files[i].o_path);
     }
 
-    log_msg(INFO, "Linking...");
-    log_msg(DEBUG, "Link command: %s", command);
-    int rc = system(command);
+    size_t command_length = strlen(command);
+    size_t bytes_written = fwrite(command, sizeof(char), command_length, g_log_file);
+    if(bytes_written != command_length)
+    {
+        log_msg(WARN, "Log line might be incomplete");
+    }
+    putc('\n', g_log_file);
+
+    struct stat s;
+    int rc = 0;
+
+    if(target->should_relink || stat(target->name, &s) != 0 || should_relink(command))
+    {
+        log_msg(INFO, "Linking...");
+        log_msg(DEBUG, "Link command: %s", command);
+        rc = system(command);
+    }
+    else
+    {
+        log_msg(INFO, "Nothing to link. Skipping...");
+    }
 
     return rc;
 }
@@ -187,10 +179,74 @@ bool should_recompile(compile_file_t* file, const char* command)
     }
     fclose(log);
 
-    if(has_command_changed)
+    return has_command_changed;
+}
+
+bool should_relink(const char* command)
+{
+    FILE* log = fopen(".tinymake_log", "r");
+    char line[MAX_LINE_SIZE];
+    bool has_command_changed = true;
+    while(fgets(line, sizeof(line), log))
     {
-        return true;
+        if(strcmp(trim_whitespaces(line), command) == 0)
+        {
+            has_command_changed = false;
+            break;
+        }
+    }
+    fclose(log);
+
+    return has_command_changed;
+}
+
+int open_log_file()
+{
+    g_log_fd = mkstemp(g_log_name);
+    if(g_log_fd == -1)
+    {
+        perror("mkstemp");
+        return -1;
     }
 
-    return false;
+    g_log_file = fdopen(g_log_fd, "w");
+    if(g_log_file == NULL)
+    {
+        perror("fdopen");
+        close(g_log_fd);
+        unlink(g_log_name);
+        return -1;
+    }
+
+    return 0;
+}
+
+int close_log_file()
+{
+    if(fflush(g_log_file) != 0 || fsync(g_log_fd) != 0)
+    {
+        perror("fflush");
+        fclose(g_log_file);
+        close(g_log_fd);
+        unlink(g_log_name);
+        return -1;
+    }
+
+    if(fclose(g_log_file) != 0)
+    {
+        perror("fclose");
+        close(g_log_fd);
+        unlink(g_log_name);
+        return -1;
+    }
+
+    if(rename(g_log_name, ".tinymake_log") != 0)
+    {
+        perror("rename");
+        close(g_log_fd);
+        unlink(g_log_name);
+        return -1;
+    }
+
+    return 0;
 }

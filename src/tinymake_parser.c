@@ -117,12 +117,12 @@ int parse_build_file(build_context_t* ctx)
             size_t s = snprintf(current_target->name, sizeof(current_target->name), BIN_DIR "/%s", target_name);
             // On supprime le ':' à la fin du nom de l'exécutable
             current_target->name[s - 1] = '\0';
-            log_msg(DEBUG, "Target name: %s", current_target->name);
+            log_msg(DEBUG, "Found target: %s", current_target->name);
 
             char* tokens[MAX_C_FILES];
             size_t token_count = tokenize_line(line_cursor, tokens);
             current_target->source_files_count = token_count;
-            log_msg(DEBUG, "%d C files to compile", current_target->source_files_count);
+            log_msg(DEBUG, "with %d files to compile", current_target->source_files_count);
 
             for(size_t i = 0; i < token_count; ++i)
             {
