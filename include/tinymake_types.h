@@ -8,6 +8,11 @@
 
 typedef struct
 {
+    size_t n_threads;
+} command_line_arguments_t;
+
+typedef struct
+{
     char stripped_name[MAX_FILE_NAME_SIZE];
     char c_path[MAX_PATH_NAME_SIZE];
     char o_path[MAX_PATH_NAME_SIZE];
@@ -33,6 +38,7 @@ typedef struct
     size_t includes_count;
     target_t targets[MAX_TARGETS];
     size_t targets_count;
+    int n_threads;
 } build_context_t;
 
 #endif

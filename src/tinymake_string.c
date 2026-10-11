@@ -26,3 +26,15 @@ char* trim_whitespaces(char* src)
 
     return s;
 }
+
+size_t tokenize_line(char* line, char* tokens[])
+{
+    char* save_buffer;
+    size_t token_count = 0;
+    for(char* token = strtok_r(line, " ", &save_buffer); token != NULL; token = strtok_r(NULL, " ", &save_buffer), ++token_count)
+    {
+        tokens[token_count] = token;
+    }
+
+    return token_count;
+}

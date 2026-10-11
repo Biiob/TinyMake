@@ -15,18 +15,6 @@ void create_compile_file(const char* path, compile_file_t* out)
     snprintf(out->d_path, sizeof(out->d_path), OBJ_DIR "/%s.d", out->stripped_name);
 }
 
-size_t tokenize_line(char* line, char* tokens[])
-{
-    char* save_buffer;
-    size_t token_count = 0;
-    for(char* token = strtok_r(line, " ", &save_buffer); token != NULL; token = strtok_r(NULL, " ", &save_buffer), ++token_count)
-    {
-        tokens[token_count] = token;
-    }
-
-    return token_count;
-}
-
 char* parse_key_value_line(const char* line)
 {
     char* equal_sign = strchr(line, '=');

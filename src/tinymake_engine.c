@@ -8,7 +8,6 @@
 #include "tinymake_engine.h"
 #include "tinymake_constants.h"
 #include "tinymake_log.h"
-#include "tinymake_parser.h"
 #include "tinymake_string.h"
 #include "tinymake_types.h"
 
@@ -25,6 +24,7 @@ typedef struct
     size_t begin;
     size_t end;
     char command[1024];
+    int return_code;
 } thread_context_t;
 
 int create_needed_directories()
@@ -52,6 +52,12 @@ static void* compile_file(void* arg)
         {
             log_msg(INFO, "Compiling: %s", command);
             int rc = system(command);
+
+            if(rc != 0 && ctx->return_code == 0)
+            {
+                ctx->return_code = rc;
+            }
+
             if(!ctx->target->should_relink)
             {
                 ctx->target->should_relink = true;
@@ -91,22 +97,30 @@ int generate_object_files(build_context_t* ctx, target_t* target)
         strcat(compiler_invokation, ctx->includes[i]);
     }
 
-    long n_processors = sysconf(_SC_NPROCESSORS_ONLN);
-    size_t n_threads = n_processors == -1 ? DEFAULT_N_THREADS : n_processors;
+    size_t n_threads = 0;
+    if(ctx->n_threads != 0)
+    {
+        n_threads = ctx->n_threads;
+    }
+    else
+    {
+        long n_processors = sysconf(_SC_NPROCESSORS_ONLN);
+        n_threads = n_processors == -1 ? DEFAULT_N_THREADS : n_processors;
+    }
+
     n_threads = n_threads > target->source_files_count ? target->source_files_count : n_threads;
     log_msg(DBG, "Compiling with %lld threads", n_threads);
     pthread_t threads[n_threads];
     thread_context_t thread_ctxs[n_threads];
 
-    size_t n_items_per_thread = target->source_files_count / n_threads;
-
     for(size_t i = 0; i < n_threads; ++i)
     {
         thread_ctxs[i].target = target;
         thread_ctxs[i].files = target->source_files;
-        thread_ctxs[i].begin = i * n_items_per_thread;
-        thread_ctxs[i].end = (i+1) * n_items_per_thread;
+        thread_ctxs[i].begin = i * target->source_files_count / n_threads;
+        thread_ctxs[i].end = (i + 1) * target->source_files_count / n_threads;
         snprintf(thread_ctxs[i].command, sizeof(thread_ctxs[i].command), "%s", compiler_invokation);
+        thread_ctxs[i].return_code = 0;
 
         int err = pthread_create(&threads[i], NULL, compile_file, &thread_ctxs[i]);
         if(err)
@@ -116,12 +130,17 @@ int generate_object_files(build_context_t* ctx, target_t* target)
         }
     }
 
+    bool has_failure = false;
     for(size_t i = 0; i < n_threads; ++i)
     {
         pthread_join(threads[i], NULL);
+        if(thread_ctxs[i].return_code != 0)
+        {
+            has_failure = true;
+        }
     }
 
-    return 0;
+    return has_failure ? -1 : 0;
 }
 
 int link_object_files(build_context_t* ctx, target_t* target)
