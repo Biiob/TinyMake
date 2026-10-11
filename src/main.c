@@ -20,8 +20,8 @@ int main()
     }
 
     build_context_t ctx = {0};
-    log_msg(DEBUG, "Parsing the content of 'build.txt'");
-    log_msg(DEBUG, "Context uses %lld KB of memory", sizeof(ctx)/1024);
+    log_msg(DBG, "Parsing the content of 'build.txt'");
+    log_msg(DBG, "Context uses %lld KB of memory", sizeof(ctx)/1024);
     if(parse_build_file(&ctx) != 0)
     {
         log_msg(ERROR, "Build has ended in error. See above for the details.");
@@ -30,7 +30,7 @@ int main()
 
     for(size_t i = 0; i < ctx.targets_count; ++i)
     {
-        log_msg(DEBUG, "Building target: %s", ctx.targets[i].name);
+        log_msg(INFO, "Building target: %s", ctx.targets[i].name);
         if(generate_object_files(&ctx, &ctx.targets[i]) != 0)
         {
             log_msg(ERROR, "Build has ended in error. See above for the details.");

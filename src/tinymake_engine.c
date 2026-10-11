@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #include "tinymake_engine.h"
 #include "tinymake_constants.h"
@@ -11,9 +12,20 @@
 #include "tinymake_string.h"
 #include "tinymake_types.h"
 
+#define DEFAULT_N_THREADS 4
+
 static int g_log_fd = 0;
 static FILE* g_log_file = NULL;
 static char g_log_name[MAX_FILE_NAME_SIZE] = ".tinymake_log_XXXXXX";
+
+typedef struct
+{
+    target_t* target;
+    compile_file_t* files;
+    size_t begin;
+    size_t end;
+    char command[1024];
+} thread_context_t;
 
 int create_needed_directories()
 {
@@ -25,9 +37,45 @@ int create_needed_directories()
     return 0;
 }
 
+static void* compile_file(void* arg)
+{
+    thread_context_t* ctx = arg;
+    char command[2048];
+
+    for(size_t i = ctx->begin; i < ctx->end; ++i)
+    {
+        snprintf(command, sizeof(command), "%s -MMD -MF %s -c %s -o %s", ctx->command,
+                                                                         ctx->files[i].d_path,
+                                                                         ctx->files[i].c_path,
+                                                                         ctx->files[i].o_path);
+        if(should_recompile(&ctx->files[i], command))
+        {
+            log_msg(INFO, "Compiling: %s", command);
+            int rc = system(command);
+            if(!ctx->target->should_relink)
+            {
+                ctx->target->should_relink = true;
+            }
+        }
+        else
+        {
+            log_msg(INFO, "Skipping compilation of: %s", ctx->files[i].c_path);
+        }
+
+        size_t command_length = strlen(command);
+        size_t bytes_written = fwrite(command, sizeof(char), command_length, g_log_file);
+        if(bytes_written != command_length)
+        {
+            log_msg(WARN, "Log line might be incomplete");
+        }
+        putc('\n', g_log_file);
+    }
+
+    return NULL;
+}
+
 int generate_object_files(build_context_t* ctx, target_t* target)
 {
-    char command[2048];
     char compiler_invokation[1024] = "";
     strcat(compiler_invokation, ctx->compiler);
     if(ctx->compile_flags[0] != '\0')
@@ -43,35 +91,37 @@ int generate_object_files(build_context_t* ctx, target_t* target)
         strcat(compiler_invokation, ctx->includes[i]);
     }
 
-    int rc = 0;
-    for(size_t i = 0; i < target->source_files_count; ++i)
-    {
-        snprintf(command, sizeof(command), "%s -MMD -MF %s -c %s -o %s", compiler_invokation,
-                                                                         target->source_files[i].d_path,
-                                                                         target->source_files[i].c_path,
-                                                                         target->source_files[i].o_path);
-        if(should_recompile(&target->source_files[i], command))
-        {
-            log_msg(INFO, "Compiling: %s", target->source_files[i].c_path);
-            log_msg(DEBUG, "Compile command: %s", command);
-            rc = system(command);
-            target->should_relink = true;
-        }
-        else
-        {
-            log_msg(INFO, "Skipping compilation of: %s", target->source_files[i].c_path);
-        }
+    long n_processors = sysconf(_SC_NPROCESSORS_ONLN);
+    size_t n_threads = n_processors == -1 ? DEFAULT_N_THREADS : n_processors;
+    n_threads = n_threads > target->source_files_count ? target->source_files_count : n_threads;
+    log_msg(DBG, "Compiling with %lld threads", n_threads);
+    pthread_t threads[n_threads];
+    thread_context_t thread_ctxs[n_threads];
 
-        size_t command_length = strlen(command);
-        size_t bytes_written = fwrite(command, sizeof(char), command_length, g_log_file);
-        if(bytes_written != command_length)
+    size_t n_items_per_thread = target->source_files_count / n_threads;
+
+    for(size_t i = 0; i < n_threads; ++i)
+    {
+        thread_ctxs[i].target = target;
+        thread_ctxs[i].files = target->source_files;
+        thread_ctxs[i].begin = i * n_items_per_thread;
+        thread_ctxs[i].end = (i+1) * n_items_per_thread;
+        snprintf(thread_ctxs[i].command, sizeof(thread_ctxs[i].command), "%s", compiler_invokation);
+
+        int err = pthread_create(&threads[i], NULL, compile_file, &thread_ctxs[i]);
+        if(err)
         {
-            log_msg(WARN, "Log line might be incomplete");
+            log_msg(ERROR, "pthread_create: %s", strerror(err));
+            return -1;
         }
-        putc('\n', g_log_file);
     }
 
-    return rc;
+    for(size_t i = 0; i < n_threads; ++i)
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    return 0;
 }
 
 int link_object_files(build_context_t* ctx, target_t* target)
@@ -100,7 +150,7 @@ int link_object_files(build_context_t* ctx, target_t* target)
     if(target->should_relink || stat(target->name, &s) != 0 || should_relink(command))
     {
         log_msg(INFO, "Linking...");
-        log_msg(DEBUG, "Link command: %s", command);
+        log_msg(DBG, "Link command: %s", command);
         rc = system(command);
     }
     else

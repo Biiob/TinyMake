@@ -74,7 +74,7 @@ int parse_build_file(build_context_t* ctx)
             }
 
             snprintf(ctx->compiler, sizeof(ctx->compiler), "%s", compiler);
-            log_msg(DEBUG, "Compiler: %s", ctx->compiler);
+            log_msg(DBG, "Compiler: %s", ctx->compiler);
         }
         else if(strcasecmp(start_token, "cflags") == 0)
         {
@@ -86,7 +86,7 @@ int parse_build_file(build_context_t* ctx)
             }
 
             snprintf(ctx->compile_flags, sizeof(ctx->compile_flags), "%s", flags);
-            log_msg(DEBUG, "Compile flags: %s", ctx->compile_flags);
+            log_msg(DBG, "Compile flags: %s", ctx->compile_flags);
         }
         else if(strcasecmp(start_token, "includes") == 0)
         {
@@ -100,12 +100,12 @@ int parse_build_file(build_context_t* ctx)
             char* tokens[MAX_INCLUDE_DIRECTORIES];
             size_t token_count = tokenize_line(includes, tokens);
             ctx->includes_count = token_count;
-            log_msg(DEBUG, "%d include directories", ctx->includes_count);
+            log_msg(DBG, "%d include directories", ctx->includes_count);
 
             for(size_t i = 0; i < token_count; ++i)
             {
                 snprintf(ctx->includes[i], sizeof(ctx->includes[i]), "%s", tokens[i]);
-                log_msg(DEBUG, "Include directory: %s", ctx->includes[i]);
+                log_msg(DBG, "Include directory: %s", ctx->includes[i]);
             }
         }
         else if(strcasecmp(start_token, "binary") == 0)
@@ -117,17 +117,17 @@ int parse_build_file(build_context_t* ctx)
             size_t s = snprintf(current_target->name, sizeof(current_target->name), BIN_DIR "/%s", target_name);
             // On supprime le ':' à la fin du nom de l'exécutable
             current_target->name[s - 1] = '\0';
-            log_msg(DEBUG, "Found target: %s", current_target->name);
+            log_msg(DBG, "Found target: %s", current_target->name);
 
             char* tokens[MAX_C_FILES];
             size_t token_count = tokenize_line(line_cursor, tokens);
             current_target->source_files_count = token_count;
-            log_msg(DEBUG, "with %d files to compile", current_target->source_files_count);
+            log_msg(DBG, "with %d files to compile", current_target->source_files_count);
 
             for(size_t i = 0; i < token_count; ++i)
             {
                 create_compile_file(tokens[i], &current_target->source_files[i]);
-                log_msg(DEBUG, "File to compile: %s", current_target->source_files[i].c_path);
+                log_msg(DBG, "File to compile: %s", current_target->source_files[i].c_path);
             }
 
             ctx->targets_count++;
