@@ -73,16 +73,15 @@ int parse_build_file(build_context_t* ctx)
                 return -1;
             }
 
-            snprintf(ctx->compile_flags, sizeof(ctx->compile_flags), "%s", flags);
-            log_msg(DBG, "Compile flags: %s", ctx->compile_flags);
+            log_msg(DBG, "Compile flags: %s", flags);
 
             char* tokens[MAX_FLAGS];
             size_t token_count = tokenize_line(flags, tokens);
-            ctx->flags_count = token_count;
+            ctx->compile_flags_count = token_count;
 
             for(size_t i = 0; i < token_count; ++i)
             {
-                snprintf(ctx->compile_flags_tok[i], sizeof(ctx->compile_flags_tok[i]), "%s", tokens[i]);
+                snprintf(ctx->compile_flags[i], sizeof(ctx->compile_flags[i]), "%s", tokens[i]);
             }
         }
         else if(strcasecmp(start_token, "includes") == 0)
@@ -96,13 +95,12 @@ int parse_build_file(build_context_t* ctx)
 
             char* tokens[MAX_INCLUDE_DIRECTORIES];
             size_t token_count = tokenize_line(includes, tokens);
-            ctx->includes_count = token_count;
-            log_msg(DBG, "%d include directories", ctx->includes_count);
+            ctx->includes_dir_count = token_count;
+            log_msg(DBG, "%d include directories", ctx->includes_dir_count);
 
             for(size_t i = 0; i < token_count; ++i)
             {
-                snprintf(ctx->includes_tok[i], sizeof(ctx->includes_tok[i]), "-I%s", tokens[i]);
-                strcat(ctx->includes, ctx->includes_tok[i]);
+                snprintf(ctx->includes_dir[i], sizeof(ctx->includes_dir[i]), "-I%s", tokens[i]);
                 log_msg(DBG, "Include directory: %s", tokens[i]);
             }
         }

@@ -60,13 +60,13 @@ static void build_argv(build_context_t* ctx, compile_args_t* args)
 {
     size_t arg = 0;
     args->argv[arg++] = ctx->compiler;
-    for(size_t i = 0; i < ctx->flags_count; ++i, ++arg)
+    for(size_t i = 0; i < ctx->compile_flags_count; ++i, ++arg)
     {
-        args->argv[arg] = ctx->compile_flags_tok[i];
+        args->argv[arg] = ctx->compile_flags[i];
     }
-    for(size_t i = 0; i < ctx->includes_count; ++i, ++arg)
+    for(size_t i = 0; i < ctx->includes_dir_count; ++i, ++arg)
     {
-        args->argv[arg] = ctx->includes_tok[i];
+        args->argv[arg] = ctx->includes_dir[i];
     }
     args->argv[arg++] = "-fdiagnostics-color=always";
     args->argv[arg++] = "-MMD";
@@ -152,40 +152,40 @@ int generate_object_files(build_context_t* ctx, target_t* target)
         pfds[i].fd = -1;
     }
 
-    size_t argc = ctx->flags_count + ctx->includes_count + 10;
+    size_t argc = ctx->compile_flags_count + ctx->includes_dir_count + 10;
     char* argv[argc];
     compile_args_t args = {0};
     args.argc = argc;
     args.argv = argv;
     build_argv(ctx, &args);
 
-    bool hasFailedJob = false;
+    bool has_failed_job = false;
     for(;;)
     {
-        bool hasPendingJob = false;
-        bool hasRunningJob = false;
+        bool has_pending_job = false;
+        bool has_running_job = false;
         for(size_t i = 0; i < n_files; ++i)
         {
             if(jobs[i].status == FAILED)
             {
-                hasFailedJob = true;
+                has_failed_job = true;
             }
             if(jobs[i].status == PENDING)
             {
-                hasPendingJob = true;
+                has_pending_job = true;
             }
             else if(jobs[i].status == RUNNING)
             {
-                hasRunningJob = true;
+                has_running_job = true;
             }
         }
 
-        if(!hasRunningJob && (!hasPendingJob || hasFailedJob))
+        if(!has_running_job && (!has_pending_job || has_failed_job))
         {
             break;
         }
 
-        while(available_processes > 0 && hasPendingJob && !hasFailedJob)
+        while(available_processes > 0 && has_pending_job && !has_failed_job)
         {
             size_t j = 0;
             while(j < n_files && jobs[j].status != PENDING)
@@ -354,7 +354,7 @@ int generate_object_files(build_context_t* ctx, target_t* target)
         }
     }
 
-    return hasFailedJob ? -1 : 0;
+    return has_failed_job ? -1 : 0;
 
     exit_error:
 

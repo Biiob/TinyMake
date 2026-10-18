@@ -33,12 +33,10 @@ typedef struct
 typedef struct
 {
     char compiler[32];
-    char compile_flags[MAX_FLAGS * MAX_FLAG_SIZE];
-    char compile_flags_tok[MAX_FLAGS][MAX_FLAG_SIZE];
-    size_t flags_count;
-    char includes[MAX_INCLUDE_DIRECTORIES * MAX_FILE_NAME_SIZE];
-    char includes_tok[MAX_INCLUDE_DIRECTORIES][MAX_FILE_NAME_SIZE];
-    size_t includes_count;
+    char compile_flags[MAX_FLAGS][MAX_FLAG_SIZE];
+    size_t compile_flags_count;
+    char includes_dir[MAX_INCLUDE_DIRECTORIES][MAX_FILE_NAME_SIZE];
+    size_t includes_dir_count;
     target_t targets[MAX_TARGETS];
     size_t targets_count;
     int n_processes;
