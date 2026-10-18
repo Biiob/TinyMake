@@ -10,5 +10,7 @@
 #define MAX_FILE_NAME_SIZE 64
 #define MAX_INCLUDE_DIRECTORIES 64
 #define MAX_TARGETS 8
+#define MAX_FLAGS 64
+#define MAX_FLAG_SIZE 16
 
 #endif

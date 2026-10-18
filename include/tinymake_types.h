@@ -8,7 +8,7 @@
 
 typedef struct
 {
-    size_t n_threads;
+    size_t n_processes;
 } command_line_arguments_t;
 
 typedef struct
@@ -33,12 +33,15 @@ typedef struct
 typedef struct
 {
     char compiler[32];
-    char compile_flags[MAX_LINE_SIZE];
-    char includes[MAX_INCLUDE_DIRECTORIES][MAX_FILE_NAME_SIZE];
+    char compile_flags[MAX_FLAGS * MAX_FLAG_SIZE];
+    char compile_flags_tok[MAX_FLAGS][MAX_FLAG_SIZE];
+    size_t flags_count;
+    char includes[MAX_INCLUDE_DIRECTORIES * MAX_FILE_NAME_SIZE];
+    char includes_tok[MAX_INCLUDE_DIRECTORIES][MAX_FILE_NAME_SIZE];
     size_t includes_count;
     target_t targets[MAX_TARGETS];
     size_t targets_count;
-    int n_threads;
+    int n_processes;
 } build_context_t;
 
 #endif

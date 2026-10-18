@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
     }
 
     build_context_t ctx = {0};
-    ctx.n_threads = args.n_threads;
+    ctx.n_processes = args.n_processes;
     log_msg(DBG, "Parsing the content of 'build.txt'");
     log_msg(DBG, "Context uses %lld KB of memory", sizeof(ctx)/1024);
     if(parse_build_file(&ctx) != 0)

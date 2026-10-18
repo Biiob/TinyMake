@@ -75,6 +75,15 @@ int parse_build_file(build_context_t* ctx)
 
             snprintf(ctx->compile_flags, sizeof(ctx->compile_flags), "%s", flags);
             log_msg(DBG, "Compile flags: %s", ctx->compile_flags);
+
+            char* tokens[MAX_FLAGS];
+            size_t token_count = tokenize_line(flags, tokens);
+            ctx->flags_count = token_count;
+
+            for(size_t i = 0; i < token_count; ++i)
+            {
+                snprintf(ctx->compile_flags_tok[i], sizeof(ctx->compile_flags_tok[i]), "%s", tokens[i]);
+            }
         }
         else if(strcasecmp(start_token, "includes") == 0)
         {
@@ -92,8 +101,9 @@ int parse_build_file(build_context_t* ctx)
 
             for(size_t i = 0; i < token_count; ++i)
             {
-                snprintf(ctx->includes[i], sizeof(ctx->includes[i]), "%s", tokens[i]);
-                log_msg(DBG, "Include directory: %s", ctx->includes[i]);
+                snprintf(ctx->includes_tok[i], sizeof(ctx->includes_tok[i]), "-I%s", tokens[i]);
+                strcat(ctx->includes, ctx->includes_tok[i]);
+                log_msg(DBG, "Include directory: %s", tokens[i]);
             }
         }
         else if(strcasecmp(start_token, "binary") == 0)

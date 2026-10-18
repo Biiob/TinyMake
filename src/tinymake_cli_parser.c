@@ -10,7 +10,7 @@ int parse_arguments(int argc, char* argv[], command_line_arguments_t* ctx)
     {
         if(strcmp(argv[i], "-j") == 0)
         {
-            ctx->n_threads = atoi(argv[i+1]);
+            ctx->n_processes = atoi(argv[i+1]);
             ++i;
         }
         else

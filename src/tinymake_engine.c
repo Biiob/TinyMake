@@ -3,7 +3,10 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <unistd.h>
-#include <pthread.h>
+#include <spawn.h>
+#include <poll.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 
 #include "tinymake_engine.h"
 #include "tinymake_constants.h"
@@ -11,136 +14,364 @@
 #include "tinymake_string.h"
 #include "tinymake_types.h"
 
-#define DEFAULT_N_THREADS 4
+extern char** environ;
 
 static int g_log_fd = 0;
 static FILE* g_log_file = NULL;
 static char g_log_name[MAX_FILE_NAME_SIZE] = ".tinymake_log_XXXXXX";
 
+typedef enum
+{
+    PENDING,
+    SKIPPED,
+    RUNNING,
+    DONE,
+    FAILED
+} job_status_t;
+
 typedef struct
 {
-    target_t* target;
-    compile_file_t* files;
-    size_t begin;
-    size_t end;
-    char command[1024];
-    int return_code;
-} thread_context_t;
+    compile_file_t* file;
+    pid_t pid;
+    int pipes[2];
+    char command[2048];
+    char buffer[8192];
+    job_status_t status;
+} job_t;
 
-int create_needed_directories()
+typedef enum
 {
-    if((mkdir(BIN_DIR, 0755) == -1 && errno != EEXIST) || (mkdir(OBJ_DIR, 0755) == -1 && errno != EEXIST))
+    CHILD_OK,
+    CHILD_EXIT_FAILURE,
+    CHILD_SIGNALED,
+    CHILD_WAIT_ERROR
+} child_result_t;
+
+typedef struct
+{
+    char** argv;
+    size_t argc;
+    size_t dep_idx;
+    size_t file_idx;
+    size_t obj_idx;
+} compile_args_t;
+
+static void build_argv(build_context_t* ctx, compile_args_t* args)
+{
+    size_t arg = 0;
+    args->argv[arg++] = ctx->compiler;
+    for(size_t i = 0; i < ctx->flags_count; ++i, ++arg)
     {
-        log_msg(ERROR, "Could not create binary or object directories. Error code: %d", errno);
-        return -1;
+        args->argv[arg] = ctx->compile_flags_tok[i];
     }
-    return 0;
+    for(size_t i = 0; i < ctx->includes_count; ++i, ++arg)
+    {
+        args->argv[arg] = ctx->includes_tok[i];
+    }
+    args->argv[arg++] = "-fdiagnostics-color=always";
+    args->argv[arg++] = "-MMD";
+    args->argv[arg++] = "-MF";
+    args->dep_idx = arg++;
+    args->argv[arg++] = "-c";
+    args->file_idx = arg++;
+    args->argv[arg++] = "-o";
+    args->obj_idx = arg++;
+    args->argv[arg] = NULL;
 }
 
-static void* compile_file(void* arg)
+static void build_display_command(compile_args_t* args, char* command)
 {
-    thread_context_t* ctx = arg;
-    char command[2048];
-
-    for(size_t i = ctx->begin; i < ctx->end; ++i)
+    size_t len = 0;
+    for(size_t i = 0; i < args->argc; ++i)
     {
-        snprintf(command, sizeof(command), "%s -MMD -MF %s -c %s -o %s", ctx->command,
-                                                                         ctx->files[i].d_path,
-                                                                         ctx->files[i].c_path,
-                                                                         ctx->files[i].o_path);
-        if(should_recompile(&ctx->files[i], command))
+        if(args->argv[i] != NULL && args->argv[i][0] != '\0')
         {
-            log_msg(INFO, "Compiling: %s", command);
-            int rc = system(command);
-
-            if(rc != 0 && ctx->return_code == 0)
-            {
-                ctx->return_code = rc;
-            }
-
-            if(!ctx->target->should_relink)
-            {
-                ctx->target->should_relink = true;
-            }
+            strcat(command, args->argv[i]);
+            strcat(command, " ");
+            len += strlen(args->argv[i]) + 1;
         }
-        else
-        {
-            log_msg(INFO, "Skipping compilation of: %s", ctx->files[i].c_path);
-        }
+    }
+    command[len - 1] = '\0';
+}
 
-        size_t command_length = strlen(command);
-        size_t bytes_written = fwrite(command, sizeof(char), command_length, g_log_file);
-        if(bytes_written != command_length)
-        {
-            log_msg(WARN, "Log line might be incomplete");
-        }
-        putc('\n', g_log_file);
+static void print_command_to_log(const char* command)
+{
+    size_t command_length = strlen(command);
+    size_t bytes_written = fwrite(command, sizeof(char), command_length, g_log_file);
+    if(bytes_written != command_length)
+    {
+        log_msg(WARN, "Command line in the log file is truncated. Will trigger a recompilation on the next run");
+    }
+    putc('\n', g_log_file);
+}
+
+static child_result_t wait_child(pid_t pid, int* detail)
+{
+    int status;
+    pid_t r;
+
+    do
+    {
+        r = waitpid(pid, &status, 0);
+    } while(r == -1 && errno == EINTR);
+
+    if(r == -1)
+    {
+        *detail = errno;
+        return CHILD_WAIT_ERROR;
     }
 
-    return NULL;
+    if(WIFEXITED(status))
+    {
+        *detail = WEXITSTATUS(status);
+        return *detail == 0 ? CHILD_OK : CHILD_EXIT_FAILURE;
+    }
+
+    if(WIFSIGNALED(status))
+    {
+        *detail = WTERMSIG(status);
+        return CHILD_SIGNALED;
+    }
+
+    *detail = 0;
+    return CHILD_WAIT_ERROR;
 }
 
 int generate_object_files(build_context_t* ctx, target_t* target)
 {
-    char compiler_invokation[1024] = "";
-    strcat(compiler_invokation, ctx->compiler);
-    if(ctx->compile_flags[0] != '\0')
+    const size_t n_processes = ctx->n_processes != 0 ? ctx->n_processes : 1;
+    size_t available_processes = n_processes;
+    const size_t n_files = target->source_files_count;
+    job_t jobs[n_files];
+    struct pollfd pfds[n_files];
+    for(size_t i = 0; i < n_files; ++i)
     {
-        strcat(compiler_invokation, " ");
-        strcat(compiler_invokation, ctx->compile_flags);
+        jobs[i].file = &target->source_files[i];
+        jobs[i].status = PENDING;
+        jobs[i].command[0] = '\0';
+        pfds[i].fd = -1;
     }
 
-    for(size_t i = 0; i < ctx->includes_count; ++i)
-    {
-        strcat(compiler_invokation, " ");
-        strcat(compiler_invokation, "-I");
-        strcat(compiler_invokation, ctx->includes[i]);
-    }
+    size_t argc = ctx->flags_count + ctx->includes_count + 10;
+    char* argv[argc];
+    compile_args_t args = {0};
+    args.argc = argc;
+    args.argv = argv;
+    build_argv(ctx, &args);
 
-    size_t n_threads = 0;
-    if(ctx->n_threads != 0)
+    bool hasFailedJob = false;
+    for(;;)
     {
-        n_threads = ctx->n_threads;
-    }
-    else
-    {
-        long n_processors = sysconf(_SC_NPROCESSORS_ONLN);
-        n_threads = n_processors == -1 ? DEFAULT_N_THREADS : n_processors;
-    }
-
-    n_threads = n_threads > target->source_files_count ? target->source_files_count : n_threads;
-    log_msg(DBG, "Compiling with %lld threads", n_threads);
-    pthread_t threads[n_threads];
-    thread_context_t thread_ctxs[n_threads];
-
-    for(size_t i = 0; i < n_threads; ++i)
-    {
-        thread_ctxs[i].target = target;
-        thread_ctxs[i].files = target->source_files;
-        thread_ctxs[i].begin = i * target->source_files_count / n_threads;
-        thread_ctxs[i].end = (i + 1) * target->source_files_count / n_threads;
-        snprintf(thread_ctxs[i].command, sizeof(thread_ctxs[i].command), "%s", compiler_invokation);
-        thread_ctxs[i].return_code = 0;
-
-        int err = pthread_create(&threads[i], NULL, compile_file, &thread_ctxs[i]);
-        if(err)
+        bool hasPendingJob = false;
+        bool hasRunningJob = false;
+        for(size_t i = 0; i < n_files; ++i)
         {
-            log_msg(ERROR, "pthread_create: %s", strerror(err));
-            return -1;
+            if(jobs[i].status == FAILED)
+            {
+                hasFailedJob = true;
+            }
+            if(jobs[i].status == PENDING)
+            {
+                hasPendingJob = true;
+            }
+            else if(jobs[i].status == RUNNING)
+            {
+                hasRunningJob = true;
+            }
+        }
+
+        if(!hasRunningJob && (!hasPendingJob || hasFailedJob))
+        {
+            break;
+        }
+
+        while(available_processes > 0 && hasPendingJob && !hasFailedJob)
+        {
+            size_t j = 0;
+            while(j < n_files && jobs[j].status != PENDING)
+            {
+                j++;
+            }
+
+            if(j == n_files)
+            {
+                break;
+            }
+
+            args.argv[args.dep_idx] = jobs[j].file->d_path;
+            args.argv[args.file_idx] = jobs[j].file->c_path;
+            args.argv[args.obj_idx] = jobs[j].file->o_path;
+
+            build_display_command(&args, jobs[j].command);
+
+            if(!should_recompile(jobs[j].file, jobs[j].command))
+            {
+                log_msg(INFO, "Skipping compilation of: %s", jobs[j].file->c_path);
+                print_command_to_log(jobs[j].command);
+                jobs[j].status = SKIPPED;
+            }
+            else
+            {
+                if(pipe(jobs[j].pipes) != 0)
+                {
+                    log_msg(ERROR, "pipe: %s", strerror(errno));
+                    jobs[j].status = FAILED;
+                    goto exit_error;
+                }
+
+                if(fcntl(jobs[j].pipes[0], F_SETFD, FD_CLOEXEC) != 0 || fcntl(jobs[j].pipes[1], F_SETFD, FD_CLOEXEC) != 0)
+                {
+                    log_msg(ERROR, "fcntl: %s", strerror(errno));
+                    jobs[j].status = FAILED;
+                    close(jobs[j].pipes[0]);
+                    close(jobs[j].pipes[1]);
+                    goto exit_error;
+                }
+
+                posix_spawn_file_actions_t fa;
+                int err = posix_spawn_file_actions_init(&fa);
+                if(err)
+                {
+                    log_msg(ERROR, "posix_spawn_file_actions_init: %s", strerror(err));
+                    jobs[j].status = FAILED;
+                    close(jobs[j].pipes[0]);
+                    close(jobs[j].pipes[1]);
+                    goto exit_error;
+                }
+
+                err = posix_spawn_file_actions_adddup2(&fa, jobs[j].pipes[1], STDOUT_FILENO);
+                if(err)
+                {
+                    log_msg(ERROR, "posix_spawn_file_actions_adddup2: %s", strerror(err));
+                    jobs[j].status = FAILED;
+                    close(jobs[j].pipes[0]);
+                    close(jobs[j].pipes[1]);
+                    posix_spawn_file_actions_destroy(&fa);
+                    goto exit_error;
+                }
+
+                err = posix_spawn_file_actions_adddup2(&fa, jobs[j].pipes[1], STDERR_FILENO);
+                if(err)
+                {
+                    log_msg(ERROR, "posix_spawn_file_actions_adddup2: %s", strerror(err));
+                    jobs[j].status = FAILED;
+                    close(jobs[j].pipes[0]);
+                    close(jobs[j].pipes[1]);
+                    posix_spawn_file_actions_destroy(&fa);
+                    goto exit_error;
+                }
+
+                err = posix_spawnp(&jobs[j].pid, ctx->compiler, &fa, NULL, argv, environ);
+                posix_spawn_file_actions_destroy(&fa);
+                if(err)
+                {
+                    log_msg(ERROR, "posix_spawnp: %s", strerror(err));
+                    jobs[j].status = FAILED;
+                    close(jobs[j].pipes[0]);
+                    close(jobs[j].pipes[1]);
+                    goto exit_error;
+                }
+
+                jobs[j].status = RUNNING;
+
+                close(jobs[j].pipes[1]);
+                pfds[j].fd = jobs[j].pipes[0];
+                pfds[j].events = POLLIN;
+
+                available_processes--;
+
+                target->should_relink = true;
+            }
+        }
+
+        if(available_processes == n_processes)
+        {
+            continue;
+        }
+
+        if(poll(pfds, n_files, -1) == -1)
+        {
+            if(errno == EINTR)
+            {
+                continue;
+            }
+            else
+            {
+                goto exit_error;
+            }
+        }
+
+        for(size_t i = 0; i < n_files; ++i)
+        {
+            if(jobs[i].status != RUNNING)
+            {
+                continue;
+            }
+
+            if(pfds[i].revents & (POLLIN | POLLHUP | POLLERR))
+            {
+                char buf[4096];
+                ssize_t n = read(pfds[i].fd, buf, sizeof(buf));
+                if(n > 0)
+                {
+                    strncat(jobs[i].buffer, buf, n);
+                }
+                else if(n == 0 || errno != EINTR)
+                {
+                    close(pfds[i].fd);
+                    pfds[i].fd = -1;
+                    available_processes++;
+
+                    int detail;
+                    switch(wait_child(jobs[i].pid, &detail))
+                    {
+                        case CHILD_OK:
+                            jobs[i].status = DONE;
+                            log_msg(INFO, "%s\n%s", jobs[i].command, jobs[i].buffer);
+                            print_command_to_log(jobs[i].command);
+                            break;
+
+                        case CHILD_EXIT_FAILURE:
+                            jobs[i].status = FAILED;
+                            log_msg(ERROR, "\n%s", jobs[i].buffer);
+                            log_msg(ERROR, "%s: compiler exited with code %d", jobs[i].file->c_path, detail);
+                            break;
+
+                        case CHILD_SIGNALED:
+                            jobs[i].status = FAILED;
+                            log_msg(ERROR, "\n%s", jobs[i].buffer);
+                            log_msg(ERROR, "%s: compiler killed by signal %d", jobs[i].file->c_path, detail);
+                            break;
+
+                        case CHILD_WAIT_ERROR:
+                            jobs[i].status = FAILED;
+                            log_msg(ERROR, "waitpid for %s: %s", jobs[i].file->c_path,
+                                    detail ? strerror(detail) : "unexpected child status");
+                            goto exit_error;
+                    }
+                }
+            }
         }
     }
 
-    bool has_failure = false;
-    for(size_t i = 0; i < n_threads; ++i)
+    return hasFailedJob ? -1 : 0;
+
+    exit_error:
+
+    for(size_t i = 0; i < n_files; ++i)
     {
-        pthread_join(threads[i], NULL);
-        if(thread_ctxs[i].return_code != 0)
+        if(jobs[i].status == RUNNING)
         {
-            has_failure = true;
+            if(pfds[i].fd != -1)
+            {
+                close(pfds[i].fd);
+            }
+            pfds[i].fd = -1;
+            int d;
+            wait_child(jobs[i].pid, &d);
         }
     }
-
-    return has_failure ? -1 : 0;
+    return -1;
 }
 
 int link_object_files(build_context_t* ctx, target_t* target)
@@ -267,6 +498,16 @@ bool should_relink(const char* command)
     fclose(log);
 
     return has_command_changed;
+}
+
+int create_needed_directories()
+{
+    if((mkdir(BIN_DIR, 0755) == -1 && errno != EEXIST) || (mkdir(OBJ_DIR, 0755) == -1 && errno != EEXIST))
+    {
+        log_msg(ERROR, "Could not create binary or object directories. Error code: %d", errno);
+        return -1;
+    }
+    return 0;
 }
 
 int open_log_file()
