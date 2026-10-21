@@ -4,3 +4,5 @@ cflags   = -Wall -Wextra -DDEBUG -g -O0
 includes = include
 
 binary tinymake: src/main.c src/tinymake_parser.c src/tinymake_engine.c src/tinymake_log.c src/tinymake_string.c src/tinymake_path.c src/tinymake_cli_parser.c
+
+binary string_test: src/string_test.c src/tinymake_string.c
