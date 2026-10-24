@@ -8,7 +8,7 @@ int main(int argc, char* argv[])
 {
   log_msg(INFO, "Starting build...");
 
-  command_line_arguments_t args = {0};
+  command_line_arguments args = {0};
   if (parse_arguments(argc, argv, &args) != 0)
   {
     goto exit_error;
@@ -24,7 +24,7 @@ int main(int argc, char* argv[])
     goto exit_error;
   }
 
-  build_context_t ctx = {0};
+  build_context ctx = {0};
   ctx.n_processes = args.n_processes;
   log_msg(DBG, "Parsing the content of 'build.txt'");
   log_msg(DBG, "Context uses %lld KB of memory", sizeof(ctx) / 1024);

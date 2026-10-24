@@ -10,7 +10,7 @@ static const char* level_str[] = {
     "ERROR",
 };
 
-void log_msg(log_level_t l, const char* msg, ...)
+void log_msg(log_level l, const char* msg, ...)
 {
   if (l == DBG)
   {

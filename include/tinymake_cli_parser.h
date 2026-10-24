@@ -3,6 +3,6 @@
 
 #include "tinymake_types.h"
 
-int parse_arguments(int argc, char* argv[], command_line_arguments_t* ctx);
+int parse_arguments(int argc, char* argv[], command_line_arguments* ctx);
 
 #endif

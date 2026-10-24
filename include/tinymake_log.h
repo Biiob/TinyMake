@@ -7,8 +7,8 @@ typedef enum
   INFO,
   WARN,
   ERROR
-} log_level_t;
+} log_level;
 
-void log_msg(log_level_t l, const char* msg, ...);
+void log_msg(log_level l, const char* msg, ...);
 
 #endif

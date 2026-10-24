@@ -28,17 +28,17 @@ typedef enum
   RUNNING,
   DONE,
   FAILED
-} job_status_t;
+} job_status;
 
 typedef struct
 {
-  compile_file_t* file;
+  compile_file* file;
   pid_t pid;
   int pipes[2];
   char command[2048];
   char buffer[8192];
-  job_status_t status;
-} job_t;
+  job_status status;
+} job;
 
 typedef enum
 {
@@ -46,7 +46,7 @@ typedef enum
   CHILD_EXIT_FAILURE,
   CHILD_SIGNALED,
   CHILD_WAIT_ERROR
-} child_result_t;
+} child_result;
 
 typedef struct
 {
@@ -55,9 +55,9 @@ typedef struct
   size_t dep_idx;
   size_t file_idx;
   size_t obj_idx;
-} compile_args_t;
+} compile_args;
 
-static void build_argv(build_context_t* ctx, compile_args_t* args)
+static void build_argv(build_context* ctx, compile_args* args)
 {
   size_t arg = 0;
   args->argv[arg++] = ctx->compiler;
@@ -80,7 +80,7 @@ static void build_argv(build_context_t* ctx, compile_args_t* args)
   args->argv[arg] = NULL;
 }
 
-static void build_display_command(compile_args_t* args, char* command)
+static void build_display_command(compile_args* args, char* command)
 {
   size_t len = 0;
   for (size_t i = 0; i < args->argc; ++i)
@@ -109,7 +109,7 @@ static void print_command_to_log(const char* command)
   putc('\n', g_log_file);
 }
 
-static child_result_t wait_child(pid_t pid, int* detail)
+static child_result wait_child(pid_t pid, int* detail)
 {
   int status;
   pid_t r;
@@ -141,12 +141,12 @@ static child_result_t wait_child(pid_t pid, int* detail)
   return CHILD_WAIT_ERROR;
 }
 
-int generate_object_files(build_context_t* ctx, target_t* target)
+int generate_object_files(build_context* ctx, target* target)
 {
   const size_t n_processes = ctx->n_processes != 0 ? ctx->n_processes : 1;
   size_t available_processes = n_processes;
   const size_t n_files = target->source_files_count;
-  job_t jobs[n_files];
+  job jobs[n_files];
   struct pollfd pfds[n_files];
   for (size_t i = 0; i < n_files; ++i)
   {
@@ -158,7 +158,7 @@ int generate_object_files(build_context_t* ctx, target_t* target)
 
   size_t argc = ctx->compile_flags_count + ctx->includes_dir_count + 10;
   char* argv[argc];
-  compile_args_t args = {0};
+  compile_args args = {0};
   args.argc = argc;
   args.argv = argv;
   build_argv(ctx, &args);
@@ -389,7 +389,7 @@ exit_error:
   return -1;
 }
 
-int link_object_files(build_context_t* ctx, target_t* target)
+int link_object_files(build_context* ctx, target* target)
 {
   char command[2048];
 
@@ -435,7 +435,7 @@ int link_object_files(build_context_t* ctx, target_t* target)
   return rc;
 }
 
-bool should_recompile(compile_file_t* file, const char* command)
+bool should_recompile(compile_file* file, const char* command)
 {
   struct stat c_file_stat;
   if (stat(file->c_path, &c_file_stat) != 0)

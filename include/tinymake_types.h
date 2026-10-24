@@ -9,7 +9,7 @@
 typedef struct
 {
   size_t n_processes;
-} command_line_arguments_t;
+} command_line_arguments;
 
 typedef struct
 {
@@ -17,22 +17,22 @@ typedef struct
   char c_path[MAX_PATH_NAME_SIZE];
   char o_path[MAX_PATH_NAME_SIZE];
   char d_path[MAX_PATH_NAME_SIZE];
-} compile_file_t;
+} compile_file;
 
 typedef enum
 {
   BINARY,
   LIBRARY
-} target_type_t;
+} target_type;
 
 typedef struct
 {
-  target_type_t type;
+  target_type type;
   char name[MAX_FILE_NAME_SIZE];
-  compile_file_t source_files[MAX_C_FILES];
+  compile_file source_files[MAX_C_FILES];
   size_t source_files_count;
   bool should_relink;
-} target_t;
+} target;
 
 typedef struct
 {
@@ -43,9 +43,9 @@ typedef struct
   size_t link_flags_count;
   char includes_dir[MAX_INCLUDE_DIRECTORIES][MAX_FILE_NAME_SIZE];
   size_t includes_dir_count;
-  target_t targets[MAX_TARGETS];
+  target targets[MAX_TARGETS];
   size_t targets_count;
   int n_processes;
-} build_context_t;
+} build_context;
 
 #endif

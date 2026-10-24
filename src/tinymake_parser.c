@@ -8,7 +8,7 @@
 #include "tinymake_path.h"
 #include "tinymake_string.h"
 
-void create_compile_file(const char* path, compile_file_t* out)
+void create_compile_file(const char* path, compile_file* out)
 {
   get_file_name_without_ext(path, out->stripped_name);
   snprintf(out->c_path, sizeof(out->c_path), "%s", path);
@@ -30,7 +30,7 @@ char* parse_key_value_line(const char* line)
   return value;
 }
 
-int parse_build_file(build_context_t* ctx)
+int parse_build_file(build_context* ctx)
 {
   FILE* f = fopen("build.txt", "r");
   if (f == NULL)
@@ -132,7 +132,7 @@ int parse_build_file(build_context_t* ctx)
     }
     else if (strcasecmp(start_token, "binary") == 0)
     {
-      target_t* current_target = &ctx->targets[ctx->targets_count];
+      target* current_target = &ctx->targets[ctx->targets_count];
       current_target->type = BINARY;
 
       char* target_name = strtok_r(NULL, " ", &line_cursor);
