@@ -8,38 +8,42 @@
 
 typedef struct
 {
-    size_t n_processes;
+  size_t n_processes;
 } command_line_arguments_t;
 
 typedef struct
 {
-    char stripped_name[MAX_FILE_NAME_SIZE];
-    char c_path[MAX_PATH_NAME_SIZE];
-    char o_path[MAX_PATH_NAME_SIZE];
-    char d_path[MAX_PATH_NAME_SIZE];
+  char stripped_name[MAX_FILE_NAME_SIZE];
+  char c_path[MAX_PATH_NAME_SIZE];
+  char o_path[MAX_PATH_NAME_SIZE];
+  char d_path[MAX_PATH_NAME_SIZE];
 } compile_file_t;
 
-typedef enum { BINARY, LIBRARY } target_type_t;
+typedef enum
+{
+  BINARY,
+  LIBRARY
+} target_type_t;
 
 typedef struct
 {
-    target_type_t type;
-    char name[MAX_FILE_NAME_SIZE];
-    compile_file_t source_files[MAX_C_FILES];
-    size_t source_files_count;
-    bool should_relink;
+  target_type_t type;
+  char name[MAX_FILE_NAME_SIZE];
+  compile_file_t source_files[MAX_C_FILES];
+  size_t source_files_count;
+  bool should_relink;
 } target_t;
 
 typedef struct
 {
-    char compiler[32];
-    char compile_flags[MAX_FLAGS][MAX_FLAG_SIZE];
-    size_t compile_flags_count;
-    char includes_dir[MAX_INCLUDE_DIRECTORIES][MAX_FILE_NAME_SIZE];
-    size_t includes_dir_count;
-    target_t targets[MAX_TARGETS];
-    size_t targets_count;
-    int n_processes;
+  char compiler[32];
+  char compile_flags[MAX_FLAGS][MAX_FLAG_SIZE];
+  size_t compile_flags_count;
+  char includes_dir[MAX_INCLUDE_DIRECTORIES][MAX_FILE_NAME_SIZE];
+  size_t includes_dir_count;
+  target_t targets[MAX_TARGETS];
+  size_t targets_count;
+  int n_processes;
 } build_context_t;
 
 #endif

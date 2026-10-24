@@ -1,6 +1,8 @@
+.zed
+.vscode
+
 bin/
 obj/
-
 bin_save/
 
 examples/
