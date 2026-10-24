@@ -5,26 +5,58 @@
 #include <stdio.h>
 #include <string.h>
 
-string_t string_create()
+static size_t allocate_or_reallocate(char** str, size_t capacity)
 {
-  string_t str = {
-      .str = malloc(DEFAULT_STRING_SIZE),
-      .len = 0,
-      .capacity = DEFAULT_STRING_SIZE,
-  };
+  capacity = capacity < DEFAULT_STRING_SIZE ? DEFAULT_STRING_SIZE : capacity;
+  if (*str == NULL)
+  {
+    char* tmp = malloc(capacity);
+    if (tmp == NULL)
+    {
+      fprintf(stderr, "Could not allocate memory: malloc failed\n");
+      abort();
+    }
+    *str = tmp;
+    return capacity;
+  }
+  else
+  {
+    char* tmp = realloc(*str, capacity);
+    if (tmp == NULL)
+    {
+      fprintf(stderr, "Could not allocate memory: realloc failed\n");
+      abort();
+    }
+    *str = tmp;
+    return capacity;
+  }
+}
 
+string_t string_create(void)
+{
+  string_t str = string_create_with_capacity(DEFAULT_STRING_SIZE);
   return str;
 }
 
 string_t string_create_with_capacity(size_t capacity)
 {
-  string_t str = {
-      .str = malloc(capacity),
-      .len = 0,
-      .capacity = capacity,
-  };
+  capacity = capacity == 0 ? 1 : capacity;
+
+  string_t str;
+  str.str = NULL;
+  str.capacity = allocate_or_reallocate(&str.str, capacity);
+  str.str[0] = '\0';
+  str.len = 0;
 
   return str;
+}
+
+void string_reserve(string_t* str, size_t capacity)
+{
+  if (capacity > str->capacity)
+  {
+    str->capacity = allocate_or_reallocate(&str->str, capacity);
+  }
 }
 
 void string_free(string_t* str)
@@ -35,77 +67,95 @@ void string_free(string_t* str)
   str->capacity = 0;
 }
 
-string_t string_copy_from_string(const string_t* other)
+string_t string_clone(const string_t* other)
 {
-  char* ptr = malloc(other->capacity);
+  char* ptr;
+  size_t capacity = allocate_or_reallocate(&ptr, other->capacity);
   memcpy(ptr, other->str, other->len);
+  ptr[other->len] = '\0';
+
   string_t str = {
       .str = ptr,
       .len = other->len,
-      .capacity = other->capacity,
+      .capacity = capacity,
   };
 
   return str;
 }
 
-string_t string_copy_from_char_arr(const char* other)
+string_t string_from_cstr(const char* other)
 {
   size_t other_len = strlen(other);
-  char* ptr = malloc(other_len);
+  size_t needed_capacity = other_len + 1;
+  char* ptr;
+  size_t capacity = allocate_or_reallocate(&ptr, needed_capacity);
   memcpy(ptr, other, other_len);
+  ptr[other_len] = '\0';
+
   string_t str = {
       .str = ptr,
       .len = other_len,
-      .capacity = other_len,
+      .capacity = capacity,
   };
 
   return str;
 }
 
-char* string_get(string_t* str)
+string_t string_take(char* s)
 {
-  str->str[str->len] = '\0';
+  size_t len = strlen(s);
+  string_t str = {
+      .str = s,
+      .len = len,
+      .capacity = len + 1,
+  };
+
+  return str;
+}
+
+char* string_at(string_t* str, size_t i)
+{
+  if (i >= str->len)
+  {
+    return NULL;
+  }
+
+  return &str->str[i];
+}
+
+char* string_cstr(string_t* str)
+{
   return str->str;
 }
 
-string_t* string_append_from_string(const string_t* src, string_t* dst)
+string_t* string_append(string_t* dst, const string_t* src)
 {
   size_t needed_capacity = dst->len + src->len + 1;
 
   if (needed_capacity > dst->capacity)
   {
-    char* tmp = realloc(dst->str, needed_capacity);
-    if (tmp == NULL)
-    {
-      return NULL;
-    }
-    dst->str = tmp;
-    dst->capacity = needed_capacity;
+    dst->capacity = allocate_or_reallocate(&dst->str, needed_capacity);
   }
 
   memcpy(dst->str + dst->len, src->str, src->len);
   dst->len = dst->len + src->len;
+  dst->str[dst->len] = '\0';
   return dst;
 }
 
-string_t* string_append_from_char_arr(const char* src, string_t* dst)
+string_t* string_append_cstr(string_t* dst, const char* src)
 {
   size_t src_len = strlen(src);
   size_t needed_capacity = dst->len + src_len + 1;
 
   if (needed_capacity > dst->capacity)
   {
-    char* tmp = realloc(dst->str, needed_capacity);
-    if (tmp == NULL)
-    {
-      return NULL;
-    }
-    dst->str = tmp;
-    dst->capacity = needed_capacity;
+    dst->capacity = allocate_or_reallocate(&dst->str, needed_capacity);
   }
 
   memcpy(dst->str + dst->len, src, src_len);
   dst->len = dst->len + src_len;
+  dst->str[dst->len] = '\0';
   return dst;
 }
 
@@ -118,13 +168,7 @@ string_t* string_format(string_t* dst, const char* fmt, ...)
   size_t needed_capacity = vsnprintf(NULL, 0, fmt, ap) + 1;
   if (needed_capacity > dst->capacity)
   {
-    char* tmp = realloc(dst->str, needed_capacity);
-    if (tmp == NULL)
-    {
-      return NULL;
-    }
-    dst->str = tmp;
-    dst->capacity = needed_capacity;
+    dst->capacity = allocate_or_reallocate(&dst->str, needed_capacity);
   }
   vsnprintf(dst->str, dst->capacity, fmt, ap2);
   dst->len = needed_capacity - 1;
@@ -136,7 +180,33 @@ string_t* string_format(string_t* dst, const char* fmt, ...)
 
 string_t* string_trim(string_t* str)
 {
-  trim_whitespaces(str->str);
+  char* s = str->str;
+  while (*s != '\0' && isspace((unsigned char)*s))
+  {
+    s++;
+  }
+
+  char* e = s;
+  if (*s != '\0')
+  {
+    e = s + strlen(s) - 1;
+    while (e > s && isspace((unsigned char)*e))
+    {
+      e--;
+    }
+    e[1] = '\0';
+  }
+
+  size_t len = *s == '\0' ? 0 : strlen(s);
+  char* tmp;
+  size_t capacity = allocate_or_reallocate(&tmp, len + 1);
+  memcpy(tmp, s, len);
+  tmp[len] = '\0';
+  free(str->str);
+  str->str = tmp;
+  str->len = len;
+  str->capacity = capacity;
+
   return str;
 }
 

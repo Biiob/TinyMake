@@ -4,6 +4,7 @@
 bin/
 obj/
 bin_save/
+save_bin/
 
 examples/
 
