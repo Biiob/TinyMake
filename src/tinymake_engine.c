@@ -393,7 +393,14 @@ int link_object_files(build_context_t* ctx, target_t* target)
 {
   char command[2048];
 
-  snprintf(command, sizeof(command), "%s -o %s", ctx->compiler, target->name);
+  snprintf(command, sizeof(command), "%s", ctx->compiler);
+  for (size_t i = 0; i < ctx->link_flags_count; ++i)
+  {
+    strcat(command, " ");
+    strcat(command, ctx->link_flags[i]);
+  }
+  strcat(command, " -o ");
+  strcat(command, target->name);
 
   for (size_t i = 0; i < target->source_files_count; ++i)
   {

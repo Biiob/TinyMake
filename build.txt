@@ -1,8 +1,9 @@
 cc       = gcc
-cflags   = -Wall -Wextra -DDEBUG -g -O0
+cflags   = -Wall -Wextra -DDEBUG -g -O0 -fsanitize=address,undefined
 #cflags   = -Wall -Wextra -g -O2
-includes = include
+ldflags = -fsanitize=address,undefined
+includes = include test
 
 binary tinymake: src/main.c src/tinymake_parser.c src/tinymake_engine.c src/tinymake_log.c src/tinymake_string.c src/tinymake_path.c src/tinymake_cli_parser.c
 
-binary string_test: src/string_test.c src/tinymake_string.c
+binary tinymake_test: test/test.c test/tinymake_string_test.c src/tinymake_string.c

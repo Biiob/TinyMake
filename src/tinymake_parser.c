@@ -88,6 +88,27 @@ int parse_build_file(build_context_t* ctx)
                  tokens[i]);
       }
     }
+    else if (strcasecmp(start_token, "ldflags") == 0)
+    {
+      char* flags = parse_key_value_line(line_cursor);
+      if (flags == NULL)
+      {
+        log_msg(ERROR, "Badly formatted 'ldflags' line");
+        return -1;
+      }
+
+      log_msg(DBG, "Link flags: %s", flags);
+
+      char* tokens[MAX_FLAGS];
+      size_t token_count = tokenize_line(flags, tokens);
+      ctx->link_flags_count = token_count;
+
+      for (size_t i = 0; i < token_count; ++i)
+      {
+        snprintf(ctx->link_flags[i], sizeof(ctx->link_flags[i]), "%s",
+                 tokens[i]);
+      }
+    }
     else if (strcasecmp(start_token, "includes") == 0)
     {
       char* includes = parse_key_value_line(line_cursor);
