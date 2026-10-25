@@ -66,6 +66,16 @@ void test_reserve(void)
   string_free(&s);
 }
 
+void test_clear(void)
+{
+  string_t s = string_from_cstr("hello");
+  string_clear(&s);
+  check_invariants(&s);
+  assert(s.len == 0);
+  assert(strcmp(s.str, "") == 0);
+  string_free(&s);
+}
+
 void test_free(void)
 {
   string_t s = string_from_cstr("abc");
@@ -76,7 +86,7 @@ void test_free(void)
   string_free(&s);
 }
 
-void test_copy_from_char_array(void)
+void test_from_cstr(void)
 {
   const char* src = "hello world";
   string_t s = string_from_cstr(src);
@@ -92,7 +102,7 @@ void test_copy_from_char_array(void)
   string_free(&e);
 }
 
-void test_copy_from_string(void)
+void test_clone(void)
 {
   string_t a = string_from_cstr("original");
   string_t b = string_clone(&a);
@@ -109,7 +119,7 @@ void test_copy_from_string(void)
   string_free(&b);
 }
 
-void test_assign(void)
+void test_take(void)
 {
   char* raw = heap_copy("owned");
   string_t s = string_take(raw);
@@ -119,10 +129,22 @@ void test_assign(void)
   string_free(&s);
 }
 
-void test_get(void)
+void test_release(void)
+{
+  string_t s = string_from_cstr("owned");
+  char* raw = string_release(&s);
+  assert(s.str == NULL);
+  assert(s.len == 0);
+  assert(s.capacity == 0);
+  assert(strcmp(raw, "owned") == 0);
+  string_free(&s);
+  free(raw);
+}
+
+void test_cstr(void)
 {
   string_t s = string_from_cstr("data");
-  char* p = string_cstr(&s);
+  const char* p = string_cstr(&s);
   assert(p == s.str);
   assert(strcmp(p, "data") == 0);
   string_free(&s);
@@ -132,16 +154,12 @@ void test_at(void)
 {
   string_t s = string_from_cstr("abc");
 
-  char* first = string_at(&s, 0);
+  const char* first = string_at(&s, 0);
   assert(first == &s.str[0]);
   assert(*first == 'a');
 
-  char* last = string_at(&s, s.len - 1);
+  const char* last = string_at(&s, s.len - 1);
   assert(last != NULL && *last == 'c');
-
-  /* Returned pointer is writable and aliases the buffer. */
-  *string_at(&s, 1) = 'X';
-  assert(strcmp(s.str, "aXc") == 0);
 
   /* Bounds checking: the terminator and beyond are out of range. */
   assert(string_at(&s, s.len) == NULL);
@@ -154,7 +172,32 @@ void test_at(void)
   string_free(&e);
 }
 
-void test_append_from_char_array(void)
+void test_set(void)
+{
+  string_t s = string_from_cstr("abc");
+
+  string_set(&s, 1, 'X');
+  assert(strcmp(s.str, "aXc") == 0);
+
+  /* Bounds checking: trying to write beyond the length does nothing */
+  string_set(&s, 4, 'Z');
+  assert(strcmp(s.str, "aXc") == 0);
+
+  string_free(&s);
+}
+
+void test_append_n(void)
+{
+  string_t s = string_from_cstr("foo");
+  string_t* r = string_append_n(&s, "barxzy", 3);
+  assert(r == &s);
+  check_invariants(&s);
+  assert(strcmp(s.str, "foobar") == 0);
+  assert(s.len == 6);
+  string_free(&s);
+}
+
+void test_append_cstr(void)
 {
   string_t s = string_from_cstr("foo");
   string_t* r = string_append_cstr(&s, "bar");
@@ -169,7 +212,7 @@ void test_append_from_char_array(void)
   string_free(&s);
 }
 
-void test_append_from_string(void)
+void test_append(void)
 {
   string_t dst = string_create();
   string_t src = string_from_cstr("abc");
@@ -197,6 +240,32 @@ void test_append_grows(void)
   assert(s.len == 1000);
   for (size_t i = 0; i < s.len; ++i)
     assert(s.str[i] == 'x');
+  string_free(&s);
+}
+
+void test_append_format(void)
+{
+  string_t s = string_from_cstr("hello");
+  char u[] = "xxx";
+  string_append_format(&s, " user %s!", u);
+  check_invariants(&s);
+  assert(strcmp(s.str, "hello user xxx!") == 0);
+
+  string_free(&s);
+}
+
+void test_push(void)
+{
+  string_t s = string_from_cstr("foo");
+  string_push(&s, 'b');
+  check_invariants(&s);
+  assert(strcmp(s.str, "foob") == 0);
+  assert(s.len == 4);
+
+  string_push(&s, '\0');
+  check_invariants(&s);
+  assert(strcmp(s.str, "foob") == 0);
+  assert(s.len == 4);
   string_free(&s);
 }
 
@@ -250,4 +319,30 @@ void test_trim(void)
   check_trim("     ", "");
   check_trim("", "");
   check_trim(" x ", "x");
+}
+
+void test_equal(void)
+{
+  string_t s1 = string_from_cstr("hello");
+  string_t s2 = string_from_cstr("hallo");
+  assert(!string_equal(&s1, &s2));
+
+  string_format(&s2, "%s", "hello world!");
+  assert(!string_equal(&s1, &s2));
+
+  string_format(&s2, "%s", "hello");
+  assert(string_equal(&s1, &s2));
+
+  string_free(&s1);
+  string_free(&s2);
+}
+
+void test_equal_nocase(void)
+{
+  string_t s1 = string_from_cstr("hello");
+  string_t s2 = string_from_cstr("HELLO");
+  assert(string_equal_nocase(&s1, &s2));
+
+  string_free(&s1);
+  string_free(&s2);
 }
