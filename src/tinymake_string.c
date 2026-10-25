@@ -32,17 +32,17 @@ static size_t allocate_or_reallocate(char** str, size_t capacity)
   }
 }
 
-string_t string_create(void)
+tmk_str tmk_str_create(void)
 {
-  string_t str = string_create_with_capacity(DEFAULT_STRING_SIZE);
+  tmk_str str = tmk_str_create_with_capacity(DEFAULT_STRING_SIZE);
   return str;
 }
 
-string_t string_create_with_capacity(size_t capacity)
+tmk_str tmk_str_create_with_capacity(size_t capacity)
 {
   capacity = capacity == 0 ? 1 : capacity;
 
-  string_t str;
+  tmk_str str;
   str.str = NULL;
   str.capacity = allocate_or_reallocate(&str.str, capacity);
   str.str[0] = '\0';
@@ -51,7 +51,7 @@ string_t string_create_with_capacity(size_t capacity)
   return str;
 }
 
-void string_reserve(string_t* str, size_t capacity)
+void tmk_str_reserve(tmk_str* str, size_t capacity)
 {
   if (capacity > str->capacity)
   {
@@ -59,13 +59,13 @@ void string_reserve(string_t* str, size_t capacity)
   }
 }
 
-void string_clear(string_t* str)
+void tmk_str_clear(tmk_str* str)
 {
   str->len = 0;
   str->str[0] = '\0';
 }
 
-void string_free(string_t* str)
+void tmk_str_free(tmk_str* str)
 {
   free(str->str);
   str->str = NULL;
@@ -73,14 +73,14 @@ void string_free(string_t* str)
   str->capacity = 0;
 }
 
-string_t string_clone(const string_t* other)
+tmk_str tmk_str_clone(const tmk_str* other)
 {
   char* ptr;
   size_t capacity = allocate_or_reallocate(&ptr, other->capacity);
   memcpy(ptr, other->str, other->len);
   ptr[other->len] = '\0';
 
-  string_t str = {
+  tmk_str str = {
       .str = ptr,
       .len = other->len,
       .capacity = capacity,
@@ -89,7 +89,7 @@ string_t string_clone(const string_t* other)
   return str;
 }
 
-string_t string_from_cstr(const char* other)
+tmk_str tmk_str_from_cstr(const char* other)
 {
   size_t other_len = strlen(other);
   size_t needed_capacity = other_len + 1;
@@ -98,7 +98,7 @@ string_t string_from_cstr(const char* other)
   memcpy(ptr, other, other_len);
   ptr[other_len] = '\0';
 
-  string_t str = {
+  tmk_str str = {
       .str = ptr,
       .len = other_len,
       .capacity = capacity,
@@ -107,10 +107,10 @@ string_t string_from_cstr(const char* other)
   return str;
 }
 
-string_t string_take(char* s)
+tmk_str tmk_str_take(char* s)
 {
   size_t len = strlen(s);
-  string_t str = {
+  tmk_str str = {
       .str = s,
       .len = len,
       .capacity = len + 1,
@@ -119,7 +119,7 @@ string_t string_take(char* s)
   return str;
 }
 
-char* string_release(string_t* str)
+char* tmk_str_release(tmk_str* str)
 {
   char* tmp = str->str;
   str->str = NULL;
@@ -129,7 +129,7 @@ char* string_release(string_t* str)
   return tmp;
 }
 
-const char* string_at(const string_t* str, size_t i)
+const char* tmk_str_at(const tmk_str* str, size_t i)
 {
   if (i >= str->len)
   {
@@ -139,7 +139,7 @@ const char* string_at(const string_t* str, size_t i)
   return &str->str[i];
 }
 
-void string_set(string_t* str, size_t i, char c)
+void tmk_str_set(tmk_str* str, size_t i, char c)
 {
   if (i >= str->len || c == '\0')
   {
@@ -149,15 +149,15 @@ void string_set(string_t* str, size_t i, char c)
   str->str[i] = c;
 }
 
-const char* string_cstr(const string_t* str)
+const char* tmk_str_cstr(const tmk_str* str)
 {
   return str->str;
 }
 
-string_t* string_append_n(string_t* dst, const char* src, size_t n)
+tmk_str* tmk_str_append_n(tmk_str* dst, const char* src, size_t n)
 {
   size_t capacity = dst->len + n + 1;
-  string_reserve(dst, capacity);
+  tmk_str_reserve(dst, capacity);
   memcpy(dst->str + dst->len, src, n);
   dst->len = dst->len + n;
   dst->str[dst->len] = '\0';
@@ -165,27 +165,27 @@ string_t* string_append_n(string_t* dst, const char* src, size_t n)
   return dst;
 }
 
-string_t* string_append(string_t* dst, const string_t* src)
+tmk_str* tmk_str_append(tmk_str* dst, const tmk_str* src)
 {
-  return string_append_n(dst, src->str, src->len);
+  return tmk_str_append_n(dst, src->str, src->len);
 }
 
-string_t* string_append_cstr(string_t* dst, const char* src)
+tmk_str* tmk_str_append_cstr(tmk_str* dst, const char* src)
 {
-  return string_append_n(dst, src, strlen(src));
+  return tmk_str_append_n(dst, src, strlen(src));
 }
 
-string_t* string_push(string_t* dst, char c)
+tmk_str* tmk_str_push(tmk_str* dst, char c)
 {
   if (c == '\0')
   {
     return dst;
   }
 
-  return string_append_n(dst, &c, 1);
+  return tmk_str_append_n(dst, &c, 1);
 }
 
-string_t* string_vappend_format(string_t* dst, const char* fmt, va_list args)
+tmk_str* tmk_str_vappend_format(tmk_str* dst, const char* fmt, va_list args)
 {
   size_t available = dst->capacity - dst->len;
   va_list copy;
@@ -200,7 +200,7 @@ string_t* string_vappend_format(string_t* dst, const char* fmt, va_list args)
 
   if ((size_t)n >= available)
   {
-    string_reserve(dst, dst->len + (size_t)n + 1);
+    tmk_str_reserve(dst, dst->len + (size_t)n + 1);
     vsnprintf(dst->str + dst->len, (size_t)n + 1, fmt, args);
   }
 
@@ -208,33 +208,33 @@ string_t* string_vappend_format(string_t* dst, const char* fmt, va_list args)
   return dst;
 }
 
-string_t* string_append_format(string_t* dst, const char* fmt, ...)
+tmk_str* tmk_str_append_format(tmk_str* dst, const char* fmt, ...)
 {
   va_list args;
   va_start(args, fmt);
-  string_t* s = string_vappend_format(dst, fmt, args);
+  tmk_str* s = tmk_str_vappend_format(dst, fmt, args);
   va_end(args);
 
   return s;
 }
 
-string_t* string_vformat(string_t* dst, const char* fmt, va_list args)
+tmk_str* tmk_str_vformat(tmk_str* dst, const char* fmt, va_list args)
 {
-  string_clear(dst);
-  return string_vappend_format(dst, fmt, args);
+  tmk_str_clear(dst);
+  return tmk_str_vappend_format(dst, fmt, args);
 }
 
-string_t* string_format(string_t* dst, const char* fmt, ...)
+tmk_str* tmk_str_format(tmk_str* dst, const char* fmt, ...)
 {
   va_list args;
   va_start(args, fmt);
-  string_t* s = string_vformat(dst, fmt, args);
+  tmk_str* s = tmk_str_vformat(dst, fmt, args);
   va_end(args);
 
   return s;
 }
 
-string_t* string_trim(string_t* str)
+tmk_str* tmk_str_trim(tmk_str* str)
 {
   char* s = str->str;
   while (*s != '\0' && isspace((unsigned char)*s))
@@ -266,7 +266,7 @@ string_t* string_trim(string_t* str)
   return str;
 }
 
-bool string_equal(const string_t* str1, const string_t* str2)
+bool tmk_str_equal(const tmk_str* str1, const tmk_str* str2)
 {
   if (str1->len != str2->len)
   {
@@ -275,7 +275,7 @@ bool string_equal(const string_t* str1, const string_t* str2)
 
   for (size_t i = 0; i < str1->len; ++i)
   {
-    if (*string_at(str1, i) != *string_at(str2, i))
+    if (*tmk_str_at(str1, i) != *tmk_str_at(str2, i))
     {
       return false;
     }
@@ -284,7 +284,7 @@ bool string_equal(const string_t* str1, const string_t* str2)
   return true;
 }
 
-bool string_equal_nocase(const string_t* str1, const string_t* str2)
+bool tmk_str_equal_nocase(const tmk_str* str1, const tmk_str* str2)
 {
   if (str1->len != str2->len)
   {
@@ -293,7 +293,7 @@ bool string_equal_nocase(const string_t* str1, const string_t* str2)
 
   for (size_t i = 0; i < str1->len; ++i)
   {
-    if (tolower(*string_at(str1, i)) != tolower(*string_at(str2, i)))
+    if (tolower(*tmk_str_at(str1, i)) != tolower(*tmk_str_at(str2, i)))
     {
       return false;
     }
