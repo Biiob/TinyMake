@@ -1,4 +1,4 @@
-#include "tinymake_engine.h"
+#include "tmk_engine.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -10,10 +10,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "tinymake_constants.h"
-#include "tinymake_log.h"
-#include "tinymake_string.h"
-#include "tinymake_types.h"
+#include "tmk_constants.h"
+#include "tmk_log.h"
+#include "tmk_str.h"
+#include "tmk_types.h"
 
 extern char** environ;
 

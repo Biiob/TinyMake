@@ -1,4 +1,4 @@
-#include "tinymake_path.h"
+#include "tmk_path.h"
 
 #include <string.h>
 

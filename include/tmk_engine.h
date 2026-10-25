@@ -1,7 +1,7 @@
-#ifndef TINYMAKE_ENGINE
-#define TINYMAKE_ENGINE
+#ifndef TMK_ENGINE_H
+#define TMK_ENGINE_H
 
-#include "tinymake_types.h"
+#include "tmk_types.h"
 
 int create_needed_directories();
 int open_log_file();

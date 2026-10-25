@@ -1,4 +1,4 @@
-#include "tinymake_string.h"
+#include "tmk_str.h"
 
 #include <ctype.h>
 #include <stdarg.h>

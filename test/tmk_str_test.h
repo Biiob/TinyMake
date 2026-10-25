@@ -1,5 +1,5 @@
-#ifndef TINYMAKE_STRING_TEST_H
-#define TINYMAKE_STRING_TEST_H
+#ifndef TMK_STR_TEST_H
+#define TMK_STR_TEST_H
 
 void test_create(void);
 void test_create_with_capacity(void);

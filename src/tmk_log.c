@@ -1,4 +1,4 @@
-#include "tinymake_log.h"
+#include "tmk_log.h"
 
 #include <stdarg.h>
 #include <stdio.h>

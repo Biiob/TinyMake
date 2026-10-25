@@ -1,10 +1,10 @@
-#ifndef TINYMAKE_TYPES
-#define TINYMAKE_TYPES
+#ifndef TMK_TYPES_H
+#define TMK_TYPES_H
 
 #include <stdbool.h>
 #include <stdlib.h>
 
-#include "tinymake_constants.h"
+#include "tmk_constants.h"
 
 typedef struct
 {

@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#include "tinymake_string_test.h"
+#include "tmk_str_test.h"
 
 #define RUN(test)           \
   do                        \

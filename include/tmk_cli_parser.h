@@ -1,7 +1,7 @@
-#ifndef TINYMAKE_CLI_PARSER
-#define TINYMAKE_CLI_PARSER
+#ifndef TMK_CLI_PARSER_H
+#define TMK_CLI_PARSER_H
 
-#include "tinymake_types.h"
+#include "tmk_types.h"
 
 int parse_arguments(int argc, char* argv[], command_line_arguments* ctx);
 

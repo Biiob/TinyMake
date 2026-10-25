@@ -1,10 +1,10 @@
-#include "tinymake_string.h"
+#include "tmk_str.h"
 
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "tinymake_string_test.h"
+#include "tmk_str_test.h"
 
 /* Invariants every valid tmk_str must satisfy. */
 static void check_invariants(const tmk_str* s)

@@ -1,5 +1,5 @@
-#ifndef TINYMAKE_STRING
-#define TINYMAKE_STRING
+#ifndef TMK_STR_H
+#define TMK_STR_H
 
 #include <stdarg.h>
 #include <stdbool.h>

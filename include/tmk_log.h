@@ -1,5 +1,5 @@
-#ifndef TINYMAKE_LOG
-#define TINYMAKE_LOG
+#ifndef TMK_LOG_H
+#define TMK_LOG_H
 
 typedef enum
 {

@@ -1,5 +1,5 @@
-#ifndef TINYMAKE_CONSTANTS
-#define TINYMAKE_CONSTANTS
+#ifndef TMK_CONSTANTS_H
+#define TMK_CONSTANTS_H
 
 #define OBJ_DIR "obj"
 #define BIN_DIR "bin"

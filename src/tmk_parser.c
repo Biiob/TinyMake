@@ -1,12 +1,12 @@
-#include "tinymake_parser.h"
+#include "tmk_parser.h"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "tinymake_log.h"
-#include "tinymake_path.h"
-#include "tinymake_string.h"
+#include "tmk_log.h"
+#include "tmk_path.h"
+#include "tmk_str.h"
 
 void create_compile_file(const char* path, compile_file* out)
 {

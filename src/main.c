@@ -1,8 +1,8 @@
-#include "tinymake_cli_parser.h"
-#include "tinymake_engine.h"
-#include "tinymake_log.h"
-#include "tinymake_parser.h"
-#include "tinymake_types.h"
+#include "tmk_cli_parser.h"
+#include "tmk_engine.h"
+#include "tmk_log.h"
+#include "tmk_parser.h"
+#include "tmk_types.h"
 
 int main(int argc, char* argv[])
 {

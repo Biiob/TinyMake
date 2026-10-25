@@ -1,7 +1,7 @@
-#ifndef TINYMAKE_PARSER
-#define TINYMAKE_PARSER
+#ifndef TMK_PARSER_H
+#define TMK_PARSER_H
 
-#include "tinymake_types.h"
+#include "tmk_types.h"
 
 void create_compile_file(const char* path, compile_file* out);
 char* parse_key_value_line(const char* line);

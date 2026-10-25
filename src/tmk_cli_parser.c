@@ -1,9 +1,9 @@
-#include "tinymake_cli_parser.h"
+#include "tmk_cli_parser.h"
 
 #include <string.h>
 
-#include "tinymake_log.h"
-#include "tinymake_types.h"
+#include "tmk_log.h"
+#include "tmk_types.h"
 
 int parse_arguments(int argc, char* argv[], command_line_arguments* ctx)
 {
