@@ -2,44 +2,12 @@
 
 #include <string.h>
 
-void get_file_path(const char* full_path, char* out)
+tmk_str get_file_name_without_ext(const tmk_str* full_path)
 {
-  const char* last_slash = strrchr(full_path, '/');
-  if (last_slash == NULL)
-  {
-    out[0] = '\0';
-  }
-  else
-  {
-    size_t n = last_slash - full_path;
-    if (n == 0)
-    {
-      n = 1;
-    }
-    memcpy(out, full_path, n);
-    out[n] = '\0';
-  }
-}
+  size_t last_slash = tmk_str_rfind_char(full_path, '/');
+  last_slash = last_slash == full_path->len ? 0 : last_slash + 1;
+  size_t last_dot = tmk_str_rfind_char(full_path, '.');
+  last_dot = last_dot == full_path->len ? last_dot : last_dot - 1;
 
-void get_file_name(const char* full_path, char* out)
-{
-  const char* last_slash = strrchr(full_path, '/');
-  const char* start_char = last_slash == NULL ? full_path : last_slash + 1;
-  size_t n = strlen(start_char);
-  memcpy(out, start_char, n);
-  out[n] = '\0';
-}
-
-void get_file_name_without_ext(const char* full_path, char* out)
-{
-  const char* last_slash = strrchr(full_path, '/');
-  const char* start_char = last_slash == NULL ? full_path : last_slash + 1;
-  const char* dot = strrchr(start_char, '.');
-  if (dot == NULL || dot == start_char)
-  {
-    dot = start_char + strlen(start_char);
-  }
-  size_t n = dot - start_char;
-  memcpy(out, start_char, n);
-  out[n] = '\0';
+  return tmk_str_substr(full_path, last_slash, last_dot - last_slash + 1);
 }

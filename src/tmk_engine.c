@@ -19,7 +19,7 @@ extern char** environ;
 
 static int g_log_fd = 0;
 static FILE* g_log_file = NULL;
-static char g_log_name[MAX_FILE_NAME_SIZE] = ".tinymake_log_XXXXXX";
+static char g_log_name[21] = ".tinymake_log_XXXXXX";
 
 typedef enum
 {
@@ -35,8 +35,8 @@ typedef struct
   compile_file* file;
   pid_t pid;
   int pipes[2];
-  char command[2048];
-  char buffer[8192];
+  tmk_str command;
+  tmk_str buffer;
   job_status status;
 } job;
 
@@ -60,14 +60,14 @@ typedef struct
 static void build_argv(build_context* ctx, compile_args* args)
 {
   size_t arg = 0;
-  args->argv[arg++] = ctx->compiler;
+  args->argv[arg++] = tmk_str_data(&ctx->compiler);
   for (size_t i = 0; i < ctx->compile_flags_count; ++i, ++arg)
   {
-    args->argv[arg] = ctx->compile_flags[i];
+    args->argv[arg] = tmk_str_data(&ctx->compile_flags[i]);
   }
   for (size_t i = 0; i < ctx->includes_dir_count; ++i, ++arg)
   {
-    args->argv[arg] = ctx->includes_dir[i];
+    args->argv[arg] = tmk_str_data(&ctx->includes_dir[i]);
   }
   args->argv[arg++] = "-fdiagnostics-color=always";
   args->argv[arg++] = "-MMD";
@@ -80,27 +80,25 @@ static void build_argv(build_context* ctx, compile_args* args)
   args->argv[arg] = NULL;
 }
 
-static void build_display_command(compile_args* args, char* command)
+static tmk_str build_display_command(const compile_args* args)
 {
-  size_t len = 0;
+  tmk_str command = tmk_str_create();
   for (size_t i = 0; i < args->argc; ++i)
   {
     if (args->argv[i] != NULL && args->argv[i][0] != '\0')
     {
-      strcat(command, args->argv[i]);
-      strcat(command, " ");
-      len += strlen(args->argv[i]) + 1;
+      tmk_str_append_format(&command, "%s ", args->argv[i]);
     }
   }
-  command[len - 1] = '\0';
+
+  return command;
 }
 
-static void print_command_to_log(const char* command)
+static void print_command_to_log(const tmk_str* command)
 {
-  size_t command_length = strlen(command);
-  size_t bytes_written = fwrite(command, sizeof(char), command_length,
-                                g_log_file);
-  if (bytes_written != command_length)
+  size_t bytes_written = fwrite(tmk_str_cstr(command), sizeof(char),
+                                command->len, g_log_file);
+  if (bytes_written != command->len)
   {
     log_msg(WARN,
             "Command line in the log file is truncated. Will trigger a "
@@ -141,6 +139,95 @@ static child_result wait_child(pid_t pid, int* detail)
   return CHILD_WAIT_ERROR;
 }
 
+static bool should_recompile(compile_file* file, const tmk_str* command)
+{
+  struct stat c_file_stat;
+  if (stat(tmk_str_cstr(&file->c_path), &c_file_stat) != 0)
+  {
+    log_msg(ERROR, "Could not find or access the following file: %s",
+            tmk_str_cstr(&file->c_path));
+    return false;
+  }
+
+  struct stat o_file_stat = {0};
+  struct stat d_file_stat = {0};
+
+  // Si le fichier .o ou .d est manquant, on recompile
+  if (stat(tmk_str_cstr(&file->o_path), &o_file_stat) != 0 ||
+      stat(tmk_str_cstr(&file->d_path), &d_file_stat) != 0)
+  {
+    return true;
+  }
+
+  // Si le fichier .o est plus ancien que le fichier .c, on recompile
+  if (o_file_stat.st_mtim.tv_sec < c_file_stat.st_mtim.tv_sec)
+  {
+    return true;
+  }
+
+  // Si une des dépendances dans le fichier .d est plus récent que le fichier
+  // .o, on recompile
+  FILE* dep = fopen(tmk_str_cstr(&file->d_path), "r");
+  if (dep == NULL)
+  {
+    log_msg(WARN,
+            "Could not find or access dependency file: %s. Recompiling...",
+            file->d_path);
+    return true;
+  }
+
+  bool is_first_line = true;
+  tmk_str line = tmk_str_create_with_capacity(8192);
+  while (fgets(tmk_str_data(&line), line.capacity, dep))
+  {
+    tmk_str_set_len(&line, strlen(tmk_str_data(&line)));
+    tmk_str_trim(&line);
+    tmk_str* tokens;
+    size_t n_tokens = tmk_str_tokenize(&tokens, &line, ' ');
+    for (size_t i = is_first_line ? 1 : 0; i < n_tokens; ++i)
+    {
+      if (tokens[i].str[0] == '\\')
+      {
+        continue;
+      }
+
+      struct stat dep_stat;
+      if (stat(tmk_str_cstr(&tokens[i]), &dep_stat) == 0 &&
+          dep_stat.st_mtim.tv_sec > o_file_stat.st_mtim.tv_sec)
+      {
+        return true;
+      }
+    }
+
+    is_first_line = false;
+
+    for (size_t i = 0; i < n_tokens; ++i)
+    {
+      tmk_str_free(&tokens[i]);
+    }
+    free(tokens);
+  }
+  fclose(dep);
+
+  FILE* log = fopen(".tinymake_log", "r");
+  bool has_command_changed = true;
+  while (fgets(tmk_str_data(&line), line.capacity, log))
+  {
+    tmk_str_set_len(&line, strlen(tmk_str_data(&line)));
+    tmk_str_trim(&line);
+
+    if (tmk_str_equal(&line, command))
+    {
+      has_command_changed = false;
+      break;
+    }
+  }
+  tmk_str_free(&line);
+  fclose(log);
+
+  return has_command_changed;
+}
+
 int generate_object_files(build_context* ctx, target* target)
 {
   const size_t n_processes = ctx->n_processes != 0 ? ctx->n_processes : 1;
@@ -152,7 +239,6 @@ int generate_object_files(build_context* ctx, target* target)
   {
     jobs[i].file = &target->source_files[i];
     jobs[i].status = PENDING;
-    jobs[i].command[0] = '\0';
     pfds[i].fd = -1;
   }
 
@@ -202,17 +288,20 @@ int generate_object_files(build_context* ctx, target* target)
         break;
       }
 
-      args.argv[args.dep_idx] = jobs[j].file->d_path;
-      args.argv[args.file_idx] = jobs[j].file->c_path;
-      args.argv[args.obj_idx] = jobs[j].file->o_path;
+      args.argv[args.dep_idx] = tmk_str_data(&jobs[j].file->d_path);
+      args.argv[args.file_idx] = tmk_str_data(&jobs[j].file->c_path);
+      args.argv[args.obj_idx] = tmk_str_data(&jobs[j].file->o_path);
 
-      build_display_command(&args, jobs[j].command);
+      jobs[j].command = build_display_command(&args);
+      tmk_str_trim(&jobs[j].command);
 
-      if (!should_recompile(jobs[j].file, jobs[j].command))
+      if (!should_recompile(jobs[j].file, &jobs[j].command))
       {
-        log_msg(INFO, "Skipping compilation of: %s", jobs[j].file->c_path);
-        print_command_to_log(jobs[j].command);
+        log_msg(INFO, "Skipping compilation of: %s",
+                tmk_str_cstr(&jobs[j].file->c_path));
+        print_command_to_log(&jobs[j].command);
         jobs[j].status = SKIPPED;
+        tmk_str_free(&jobs[j].command);
       }
       else
       {
@@ -268,8 +357,8 @@ int generate_object_files(build_context* ctx, target* target)
           goto exit_error;
         }
 
-        err = posix_spawnp(&jobs[j].pid, ctx->compiler, &fa, NULL, argv,
-                           environ);
+        err = posix_spawnp(&jobs[j].pid, tmk_str_cstr(&ctx->compiler), &fa,
+                           NULL, argv, environ);
         posix_spawn_file_actions_destroy(&fa);
         if (err)
         {
@@ -281,6 +370,7 @@ int generate_object_files(build_context* ctx, target* target)
         }
 
         jobs[j].status = RUNNING;
+        jobs[j].buffer = tmk_str_create_with_capacity(1024);
 
         close(jobs[j].pipes[1]);
         pfds[j].fd = jobs[j].pipes[0];
@@ -322,7 +412,7 @@ int generate_object_files(build_context* ctx, target* target)
         ssize_t n = read(pfds[i].fd, buf, sizeof(buf));
         if (n > 0)
         {
-          strncat(jobs[i].buffer, buf, n);
+          tmk_str_append_n(&jobs[i].buffer, buf, n);
         }
         else if (n == 0 || errno != EINTR)
         {
@@ -335,36 +425,41 @@ int generate_object_files(build_context* ctx, target* target)
           {
             case CHILD_OK:
               jobs[i].status = DONE;
-              log_msg(INFO, "%s\n%s", jobs[i].command, jobs[i].buffer);
-              print_command_to_log(jobs[i].command);
+              log_msg(INFO, "%s\n%s", tmk_str_cstr(&jobs[i].command),
+                      tmk_str_cstr(&jobs[i].buffer));
+              print_command_to_log(&jobs[i].command);
               break;
 
             case CHILD_EXIT_FAILURE:
               jobs[i].status = FAILED;
-              log_msg(ERROR, "\n%s", jobs[i].buffer);
+              log_msg(ERROR, "\n%s", tmk_str_cstr(&jobs[i].buffer));
               log_msg(ERROR,
                       "%s: compiler exited "
                       "with code %d",
-                      jobs[i].file->c_path, detail);
+                      tmk_str_cstr(&jobs[i].file->c_path), detail);
               break;
 
             case CHILD_SIGNALED:
               jobs[i].status = FAILED;
-              log_msg(ERROR, "\n%s", jobs[i].buffer);
+              log_msg(ERROR, "\n%s", tmk_str_cstr(&jobs[i].buffer));
               log_msg(ERROR,
                       "%s: compiler killed "
                       "by signal %d",
-                      jobs[i].file->c_path, detail);
+                      tmk_str_cstr(&jobs[i].file->c_path), detail);
               break;
 
             case CHILD_WAIT_ERROR:
               jobs[i].status = FAILED;
-              log_msg(ERROR, "waitpid for %s: %s", jobs[i].file->c_path,
+              log_msg(ERROR, "waitpid for %s: %s",
+                      tmk_str_cstr(&jobs[i].file->c_path),
                       detail ? strerror(detail)
                              : "unexpected child "
                                "status");
               goto exit_error;
           }
+
+          tmk_str_free(&jobs[i].buffer);
+          tmk_str_free(&jobs[i].command);
         }
       }
     }
@@ -389,29 +484,49 @@ exit_error:
   return -1;
 }
 
+static bool should_relink(const tmk_str* command)
+{
+  FILE* log = fopen(".tinymake_log", "r");
+  bool has_command_changed = true;
+
+  tmk_str line = tmk_str_create_with_capacity(8192);
+  while (fgets(tmk_str_data(&line), line.capacity, log))
+  {
+    tmk_str_set_len(&line, strlen(tmk_str_data(&line)));
+    tmk_str_trim(&line);
+
+    if (tmk_str_equal(&line, command))
+    {
+      has_command_changed = false;
+      break;
+    }
+  }
+  tmk_str_free(&line);
+  fclose(log);
+
+  return has_command_changed;
+}
+
 int link_object_files(build_context* ctx, target* target)
 {
-  char command[2048];
-
-  snprintf(command, sizeof(command), "%s", ctx->compiler);
+  tmk_str command = tmk_str_create();
+  tmk_str_append(&command, &ctx->compiler);
   for (size_t i = 0; i < ctx->link_flags_count; ++i)
   {
-    strcat(command, " ");
-    strcat(command, ctx->link_flags[i]);
+    tmk_str_append_format(&command, " %s", tmk_str_cstr(&ctx->link_flags[i]));
   }
-  strcat(command, " -o ");
-  strcat(command, target->name);
+
+  tmk_str_append_format(&command, " -o %s", tmk_str_cstr(&target->name));
 
   for (size_t i = 0; i < target->source_files_count; ++i)
   {
-    strcat(command, " ");
-    strcat(command, target->source_files[i].o_path);
+    tmk_str_append_format(&command, " %s",
+                          tmk_str_cstr(&target->source_files[i].o_path));
   }
 
-  size_t command_length = strlen(command);
-  size_t bytes_written = fwrite(command, sizeof(char), command_length,
-                                g_log_file);
-  if (bytes_written != command_length)
+  size_t bytes_written = fwrite(tmk_str_cstr(&command), sizeof(char),
+                                command.len, g_log_file);
+  if (bytes_written != command.len)
   {
     log_msg(WARN, "Log line might be incomplete");
   }
@@ -420,114 +535,21 @@ int link_object_files(build_context* ctx, target* target)
   struct stat s;
   int rc = 0;
 
-  if (target->should_relink || stat(target->name, &s) != 0 ||
-      should_relink(command))
+  if (target->should_relink || stat(tmk_str_cstr(&target->name), &s) != 0 ||
+      should_relink(&command))
   {
     log_msg(INFO, "Linking...");
-    log_msg(DBG, "Link command: %s", command);
-    rc = system(command);
+    log_msg(DBG, "Link command: %s", tmk_str_cstr(&command));
+    rc = system(tmk_str_cstr(&command));
   }
   else
   {
     log_msg(INFO, "Nothing to link. Skipping...");
   }
 
+  tmk_str_free(&command);
+
   return rc;
-}
-
-bool should_recompile(compile_file* file, const char* command)
-{
-  struct stat c_file_stat;
-  if (stat(file->c_path, &c_file_stat) != 0)
-  {
-    log_msg(ERROR, "Could not find or access the following file: %s",
-            file->c_path);
-    return false;
-  }
-
-  struct stat o_file_stat = {0};
-  struct stat d_file_stat = {0};
-
-  // Si le fichier .o ou .d est manquant, on recompile
-  if (stat(file->o_path, &o_file_stat) != 0 ||
-      stat(file->d_path, &d_file_stat) != 0)
-  {
-    return true;
-  }
-
-  // Si le fichier .o est plus ancien que le fichier .c, on recompile
-  if (o_file_stat.st_mtim.tv_sec < c_file_stat.st_mtim.tv_sec)
-  {
-    return true;
-  }
-
-  // Si une des dépendances dans le fichier .d est plus récent que le fichier
-  // .o, on recompile
-  FILE* dep = fopen(file->d_path, "r");
-  if (dep == NULL)
-  {
-    log_msg(WARN,
-            "Could not find or access dependency file: %s. Recompiling...",
-            file->d_path);
-    return true;
-  }
-
-  bool is_first_line = true;
-  char line[MAX_LINE_SIZE];
-  while (fgets(line, sizeof(line), dep))
-  {
-    char* tokens[128];
-    size_t token_count = tokenize_line(trim_whitespaces(line), tokens);
-    for (size_t i = is_first_line ? 1 : 0; i < token_count; ++i)
-    {
-      if (tokens[i][0] == '\\')
-      {
-        continue;
-      }
-
-      struct stat dep_stat;
-      if (stat(tokens[i], &dep_stat) == 0 &&
-          dep_stat.st_mtim.tv_sec > o_file_stat.st_mtim.tv_sec)
-      {
-        return true;
-      }
-    }
-
-    is_first_line = false;
-  }
-  fclose(dep);
-
-  FILE* log = fopen(".tinymake_log", "r");
-  bool has_command_changed = true;
-  while (fgets(line, sizeof(line), log))
-  {
-    if (strcmp(trim_whitespaces(line), command) == 0)
-    {
-      has_command_changed = false;
-      break;
-    }
-  }
-  fclose(log);
-
-  return has_command_changed;
-}
-
-bool should_relink(const char* command)
-{
-  FILE* log = fopen(".tinymake_log", "r");
-  char line[MAX_LINE_SIZE];
-  bool has_command_changed = true;
-  while (fgets(line, sizeof(line), log))
-  {
-    if (strcmp(trim_whitespaces(line), command) == 0)
-    {
-      has_command_changed = false;
-      break;
-    }
-  }
-  fclose(log);
-
-  return has_command_changed;
 }
 
 int create_needed_directories()

@@ -1,6 +1,6 @@
-cc       = gcc
-cflags   = -Wall -Wextra -DDEBUG -g -O0 -fsanitize=address,undefined
-#cflags   = -Wall -Wextra -g -O2
+cc = gcc
+cflags = -Wall -Wextra -DDEBUG -g -O0 -fsanitize=address,undefined
+#cflags = -Wall -Wextra -g -O2
 ldflags = -fsanitize=address,undefined
 includes = include test
 

@@ -4,6 +4,42 @@
 #include "tmk_parser.h"
 #include "tmk_types.h"
 
+static void free_target(target* target)
+{
+  tmk_str_free(&target->name);
+  for (size_t i = 0; i < target->source_files_count; ++i)
+  {
+    tmk_str_free(&target->source_files[i].stripped_name);
+    tmk_str_free(&target->source_files[i].c_path);
+    tmk_str_free(&target->source_files[i].o_path);
+    tmk_str_free(&target->source_files[i].d_path);
+  }
+}
+
+static void free_context(build_context* ctx)
+{
+  tmk_str_free(&ctx->compiler);
+  for (size_t i = 0; i < ctx->compile_flags_count; ++i)
+  {
+    tmk_str_free(&ctx->compile_flags[i]);
+  }
+
+  for (size_t i = 0; i < ctx->link_flags_count; ++i)
+  {
+    tmk_str_free(&ctx->link_flags[i]);
+  }
+
+  for (size_t i = 0; i < ctx->includes_dir_count; ++i)
+  {
+    tmk_str_free(&ctx->includes_dir[i]);
+  }
+
+  for (size_t i = 0; i < ctx->targets_count; ++i)
+  {
+    free_target(&ctx->targets[i]);
+  }
+}
+
 int main(int argc, char* argv[])
 {
   log_msg(INFO, "Starting build...");
@@ -27,7 +63,6 @@ int main(int argc, char* argv[])
   build_context ctx = {0};
   ctx.n_processes = args.n_processes;
   log_msg(DBG, "Parsing the content of 'build.txt'");
-  log_msg(DBG, "Context uses %lld KB of memory", sizeof(ctx) / 1024);
   if (parse_build_file(&ctx) != 0)
   {
     goto cleanup;
@@ -35,7 +70,7 @@ int main(int argc, char* argv[])
 
   for (size_t i = 0; i < ctx.targets_count; ++i)
   {
-    log_msg(INFO, "Building target: %s", ctx.targets[i].name);
+    log_msg(INFO, "Building target: %s", tmk_str_cstr(&ctx.targets[i].name));
     if (generate_object_files(&ctx, &ctx.targets[i]) != 0)
     {
       goto cleanup;
@@ -52,10 +87,12 @@ int main(int argc, char* argv[])
     goto exit_error;
   }
 
+  free_context(&ctx);
   log_msg(INFO, "Build has ended");
   return 0;
 
 cleanup:
+  free_context(&ctx);
   close_log_file();
 
 exit_error:

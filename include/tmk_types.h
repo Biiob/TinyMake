@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "tmk_constants.h"
+#include "tmk_str.h"
 
 typedef struct
 {
@@ -13,10 +14,10 @@ typedef struct
 
 typedef struct
 {
-  char stripped_name[MAX_FILE_NAME_SIZE];
-  char c_path[MAX_PATH_NAME_SIZE];
-  char o_path[MAX_PATH_NAME_SIZE];
-  char d_path[MAX_PATH_NAME_SIZE];
+  tmk_str stripped_name;
+  tmk_str c_path;
+  tmk_str o_path;
+  tmk_str d_path;
 } compile_file;
 
 typedef enum
@@ -28,7 +29,7 @@ typedef enum
 typedef struct
 {
   target_type type;
-  char name[MAX_FILE_NAME_SIZE];
+  tmk_str name;
   compile_file source_files[MAX_C_FILES];
   size_t source_files_count;
   bool should_relink;
@@ -36,12 +37,12 @@ typedef struct
 
 typedef struct
 {
-  char compiler[32];
-  char compile_flags[MAX_FLAGS][MAX_FLAG_SIZE];
+  tmk_str compiler;
+  tmk_str compile_flags[MAX_FLAGS];
   size_t compile_flags_count;
-  char link_flags[MAX_FLAGS][MAX_FLAG_SIZE];
+  tmk_str link_flags[MAX_FLAGS];
   size_t link_flags_count;
-  char includes_dir[MAX_INCLUDE_DIRECTORIES][MAX_FILE_NAME_SIZE];
+  tmk_str includes_dir[MAX_INCLUDE_DIRECTORIES];
   size_t includes_dir_count;
   target targets[MAX_TARGETS];
   size_t targets_count;

@@ -8,28 +8,6 @@
 #include "tmk_path.h"
 #include "tmk_str.h"
 
-void create_compile_file(const char* path, compile_file* out)
-{
-  get_file_name_without_ext(path, out->stripped_name);
-  snprintf(out->c_path, sizeof(out->c_path), "%s", path);
-  snprintf(out->o_path, sizeof(out->o_path), OBJ_DIR "/%s.o",
-           out->stripped_name);
-  snprintf(out->d_path, sizeof(out->d_path), OBJ_DIR "/%s.d",
-           out->stripped_name);
-}
-
-char* parse_key_value_line(const char* line)
-{
-  char* equal_sign = strchr(line, '=');
-  if (equal_sign == NULL)
-  {
-    return NULL;
-  }
-  char* value = trim_whitespaces(equal_sign + 1);
-
-  return value;
-}
-
 int parse_build_file(build_context* ctx)
 {
   FILE* f = fopen("build.txt", "r");
@@ -41,123 +19,99 @@ int parse_build_file(build_context* ctx)
 
   ctx->targets_count = 0;
 
-  char line[MAX_LINE_SIZE];
-  while (fgets(line, sizeof(line), f))
+  tmk_str line = tmk_str_create_with_capacity(8192);
+  while (fgets(tmk_str_data(&line), line.capacity, f))
   {
+    tmk_str_set_len(&line, strlen(tmk_str_data(&line)));
+
     // Commentaires et lignes vides
-    if (line[0] == '#' || isspace((unsigned char)line[0]))
+    if (line.str[0] == '#' || isspace((unsigned char)line.str[0]))
     {
       continue;
     }
 
-    char* trimmed_line = trim_whitespaces(line);
+    tmk_str_trim(&line);
 
-    char* line_cursor;
-    char* start_token = strtok_r(trimmed_line, " ", &line_cursor);
+    tmk_str* tokens;
+    size_t n_token = tmk_str_tokenize(&tokens, &line, ' ');
 
-    if (strcasecmp(start_token, "cc") == 0)
+    tmk_str* key = &tokens[0];
+
+    if (tmk_str_equal_cstr(key, "cc"))
     {
-      char* compiler = parse_key_value_line(line_cursor);
-      if (compiler == NULL)
-      {
-        log_msg(ERROR, "Badly formatted 'cc' line");
-        return -1;
-      }
-
-      snprintf(ctx->compiler, sizeof(ctx->compiler), "%s", compiler);
-      log_msg(DBG, "Compiler: %s", ctx->compiler);
+      ctx->compiler = tmk_str_take(tmk_str_release(&tokens[2]));
+      log_msg(DBG, "Compiler: %s", tmk_str_cstr(&ctx->compiler));
     }
-    else if (strcasecmp(start_token, "cflags") == 0)
+    else if (tmk_str_equal_cstr(key, "cflags"))
     {
-      char* flags = parse_key_value_line(line_cursor);
-      if (flags == NULL)
+      ctx->compile_flags_count = n_token - 2;
+
+      for (size_t i = 2; i < n_token; ++i)
       {
-        log_msg(ERROR, "Badly formatted 'cflags' line");
-        return -1;
-      }
-
-      log_msg(DBG, "Compile flags: %s", flags);
-
-      char* tokens[MAX_FLAGS];
-      size_t token_count = tokenize_line(flags, tokens);
-      ctx->compile_flags_count = token_count;
-
-      for (size_t i = 0; i < token_count; ++i)
-      {
-        snprintf(ctx->compile_flags[i], sizeof(ctx->compile_flags[i]), "%s",
-                 tokens[i]);
+        log_msg(DBG, "Compile flag: %s", tmk_str_cstr(&tokens[i]));
+        ctx->compile_flags[i - 2] = tmk_str_take(tmk_str_release(&tokens[i]));
       }
     }
-    else if (strcasecmp(start_token, "ldflags") == 0)
+    else if (tmk_str_equal_cstr(key, "ldflags"))
     {
-      char* flags = parse_key_value_line(line_cursor);
-      if (flags == NULL)
+      ctx->link_flags_count = n_token - 2;
+
+      for (size_t i = 2; i < n_token; ++i)
       {
-        log_msg(ERROR, "Badly formatted 'ldflags' line");
-        return -1;
-      }
-
-      log_msg(DBG, "Link flags: %s", flags);
-
-      char* tokens[MAX_FLAGS];
-      size_t token_count = tokenize_line(flags, tokens);
-      ctx->link_flags_count = token_count;
-
-      for (size_t i = 0; i < token_count; ++i)
-      {
-        snprintf(ctx->link_flags[i], sizeof(ctx->link_flags[i]), "%s",
-                 tokens[i]);
+        ctx->link_flags[i - 2] = tmk_str_take(tmk_str_release(&tokens[i]));
       }
     }
-    else if (strcasecmp(start_token, "includes") == 0)
+    else if (tmk_str_equal_cstr(key, "includes"))
     {
-      char* includes = parse_key_value_line(line_cursor);
-      if (includes == NULL)
-      {
-        log_msg(ERROR, "Badly formatted 'includes' line");
-        return -1;
-      }
-
-      char* tokens[MAX_INCLUDE_DIRECTORIES];
-      size_t token_count = tokenize_line(includes, tokens);
-      ctx->includes_dir_count = token_count;
+      ctx->includes_dir_count = n_token - 2;
       log_msg(DBG, "%d include directories", ctx->includes_dir_count);
 
-      for (size_t i = 0; i < token_count; ++i)
+      for (size_t i = 2; i < n_token; ++i)
       {
-        snprintf(ctx->includes_dir[i], sizeof(ctx->includes_dir[i]), "-I%s",
-                 tokens[i]);
-        log_msg(DBG, "Include directory: %s", tokens[i]);
+        log_msg(DBG, "Include directory: %s", tmk_str_cstr(&tokens[i]));
+        ctx->includes_dir[i - 2] = tmk_str_create();
+        tmk_str_format(&ctx->includes_dir[i - 2], "-I%s",
+                       tmk_str_cstr(&tokens[i]));
       }
     }
-    else if (strcasecmp(start_token, "binary") == 0)
+    else if (tmk_str_equal_cstr(key, "binary"))
     {
       target* current_target = &ctx->targets[ctx->targets_count];
       current_target->type = BINARY;
 
-      char* target_name = strtok_r(NULL, " ", &line_cursor);
-      size_t s = snprintf(current_target->name, sizeof(current_target->name),
-                          BIN_DIR "/%s", target_name);
-      // On supprime le ':' à la fin du nom de l'exécutable
-      current_target->name[s - 1] = '\0';
-      log_msg(DBG, "Found target: %s", current_target->name);
+      current_target->name = tmk_str_from_cstr(BIN_DIR);
+      tmk_str_append_format(&current_target->name, "/%s",
+                            tmk_str_cstr(&tokens[1]));
 
-      char* tokens[MAX_C_FILES];
-      size_t token_count = tokenize_line(line_cursor, tokens);
-      current_target->source_files_count = token_count;
+      log_msg(DBG, "Found target: %s", tmk_str_cstr(&current_target->name));
+
+      current_target->source_files_count = n_token - 2;
       log_msg(DBG, "with %d files to compile",
               current_target->source_files_count);
 
-      for (size_t i = 0; i < token_count; ++i)
+      for (size_t i = 2; i < n_token; ++i)
       {
-        create_compile_file(tokens[i], &current_target->source_files[i]);
-        log_msg(DBG, "File to compile: %s",
-                current_target->source_files[i].c_path);
-      }
+        compile_file* cf = &current_target->source_files[i - 2];
+        cf->c_path = tmk_str_take(tmk_str_release(&tokens[i]));
+        cf->stripped_name = get_file_name_without_ext(&cf->c_path);
+        cf->o_path = tmk_str_from_cstr(OBJ_DIR);
+        tmk_str_append_format(&cf->o_path, "/%s.o",
+                              tmk_str_cstr(&cf->stripped_name));
+        cf->d_path = tmk_str_from_cstr(OBJ_DIR);
+        tmk_str_append_format(&cf->d_path, "/%s.d",
+                              tmk_str_cstr(&cf->stripped_name));
 
+        log_msg(DBG, "File to compile: %s", tmk_str_cstr(&cf->c_path));
+      }
       ctx->targets_count++;
     }
+    for (size_t i = 0; i < n_token; ++i)
+    {
+      tmk_str_free(&tokens[i]);
+    }
+    free(tokens);
   }
+  tmk_str_free(&line);
 
   fclose(f);
   return 0;

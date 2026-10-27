@@ -6,11 +6,8 @@
 
 #define MAX_LINE_SIZE 4096
 #define MAX_C_FILES 256
-#define MAX_PATH_NAME_SIZE 256
-#define MAX_FILE_NAME_SIZE 64
 #define MAX_INCLUDE_DIRECTORIES 64
 #define MAX_TARGETS 8
 #define MAX_FLAGS 64
-#define MAX_FLAG_SIZE 64
 
 #endif
