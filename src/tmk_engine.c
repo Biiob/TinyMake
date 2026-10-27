@@ -574,14 +574,14 @@ int open_log_file()
   g_log_fd = mkstemp(g_log_name);
   if (g_log_fd == -1)
   {
-    perror("mkstemp");
+    log_msg(ERROR, "mkstemp: %s", strerror(errno));
     return -1;
   }
 
   g_log_file = fdopen(g_log_fd, "w");
   if (g_log_file == NULL)
   {
-    perror("fdopen");
+    log_msg(ERROR, "fdopen: %s", strerror(errno));
     close(g_log_fd);
     unlink(g_log_name);
     return -1;
@@ -594,25 +594,22 @@ int close_log_file()
 {
   if (fflush(g_log_file) != 0 || fsync(g_log_fd) != 0)
   {
-    perror("fflush");
+    log_msg(ERROR, "fflush/fsync: %s", strerror(errno));
     fclose(g_log_file);
-    close(g_log_fd);
     unlink(g_log_name);
     return -1;
   }
 
   if (fclose(g_log_file) != 0)
   {
-    perror("fclose");
-    close(g_log_fd);
+    log_msg(ERROR, "fclose: %s", strerror(errno));
     unlink(g_log_name);
     return -1;
   }
 
   if (rename(g_log_name, ".tinymake_log") != 0)
   {
-    perror("rename");
-    close(g_log_fd);
+    log_msg(ERROR, "rename: %s", strerror(errno));
     unlink(g_log_name);
     return -1;
   }
