@@ -18,6 +18,7 @@ typedef struct
   tmk_str c_path;
   tmk_str o_path;
   tmk_str d_path;
+  bool was_rebuilt;
 } compile_file;
 
 typedef enum
@@ -32,7 +33,6 @@ typedef struct
   tmk_str name;
   compile_file source_files[MAX_C_FILES];
   size_t source_files_count;
-  bool should_relink;
 } target;
 
 typedef struct

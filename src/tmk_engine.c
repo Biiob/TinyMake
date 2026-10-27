@@ -188,6 +188,11 @@ static bool should_recompile(compile_file* file, const tmk_str* command)
     {
       if (tokens[i].str[0] == '\\')
       {
+        for (size_t i = 0; i < n_tokens; ++i)
+        {
+          tmk_str_free(&tokens[i]);
+        }
+        free(tokens);
         continue;
       }
 
@@ -195,6 +200,11 @@ static bool should_recompile(compile_file* file, const tmk_str* command)
       if (stat(tmk_str_cstr(&tokens[i]), &dep_stat) == 0 &&
           dep_stat.st_mtim.tv_sec > o_file_stat.st_mtim.tv_sec)
       {
+        for (size_t i = 0; i < n_tokens; ++i)
+        {
+          tmk_str_free(&tokens[i]);
+        }
+        free(tokens);
         return true;
       }
     }
@@ -377,8 +387,6 @@ int generate_object_files(build_context* ctx, target* target)
         pfds[j].events = POLLIN;
 
         available_processes--;
-
-        target->should_relink = true;
       }
     }
 
@@ -425,6 +433,7 @@ int generate_object_files(build_context* ctx, target* target)
           {
             case CHILD_OK:
               jobs[i].status = DONE;
+              jobs[i].file->was_rebuilt = true;
               log_msg(INFO, "%s\n%s", tmk_str_cstr(&jobs[i].command),
                       tmk_str_cstr(&jobs[i].buffer));
               print_command_to_log(&jobs[i].command);
@@ -480,6 +489,9 @@ exit_error:
       int d;
       wait_child(jobs[i].pid, &d);
     }
+
+    tmk_str_free(&jobs[i].buffer);
+    tmk_str_free(&jobs[i].command);
   }
   return -1;
 }
@@ -535,7 +547,17 @@ int link_object_files(build_context* ctx, target* target)
   struct stat s;
   int rc = 0;
 
-  if (target->should_relink || stat(tmk_str_cstr(&target->name), &s) != 0 ||
+  bool has_rebuilt_file = false;
+  for (size_t i = 0; i < target->source_files_count; ++i)
+  {
+    if (target->source_files[i].was_rebuilt)
+    {
+      has_rebuilt_file = true;
+      break;
+    }
+  }
+
+  if (has_rebuilt_file || stat(tmk_str_cstr(&target->name), &s) != 0 ||
       should_relink(&command))
   {
     log_msg(INFO, "Linking...");
