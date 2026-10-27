@@ -139,6 +139,32 @@ static child_result wait_child(pid_t pid, int* detail)
   return CHILD_WAIT_ERROR;
 }
 
+static bool is_command_in_log(const tmk_str* command)
+{
+  FILE* log = fopen(".tinymake_log", "r");
+  if (log == NULL)
+  {
+    return false;
+  }
+
+  bool found = false;
+  tmk_str line = tmk_str_create();
+  while (tmk_str_read_line(&line, log) != -1)
+  {
+    tmk_str_trim(&line);
+
+    if (tmk_str_equal(&line, command))
+    {
+      found = true;
+      break;
+    }
+  }
+  tmk_str_free(&line);
+  fclose(log);
+
+  return found;
+}
+
 static bool should_recompile(compile_file* file, const tmk_str* command)
 {
   struct stat c_file_stat;
@@ -172,27 +198,23 @@ static bool should_recompile(compile_file* file, const tmk_str* command)
   {
     log_msg(WARN,
             "Could not find or access dependency file: %s. Recompiling...",
-            file->d_path);
+            tmk_str_cstr(&file->d_path));
     return true;
   }
 
   bool is_first_line = true;
-  tmk_str line = tmk_str_create_with_capacity(8192);
-  while (fgets(tmk_str_data(&line), line.capacity, dep))
+  bool has_newer_dependency = false;
+  tmk_str line = tmk_str_create();
+  while (!has_newer_dependency && tmk_str_read_line(&line, dep) != -1)
   {
-    tmk_str_set_len(&line, strlen(tmk_str_data(&line)));
     tmk_str_trim(&line);
     tmk_str* tokens;
     size_t n_tokens = tmk_str_tokenize(&tokens, &line, ' ');
     for (size_t i = is_first_line ? 1 : 0; i < n_tokens; ++i)
     {
+      // Line continuation, not a dependency
       if (tokens[i].str[0] == '\\')
       {
-        for (size_t i = 0; i < n_tokens; ++i)
-        {
-          tmk_str_free(&tokens[i]);
-        }
-        free(tokens);
         continue;
       }
 
@@ -200,12 +222,8 @@ static bool should_recompile(compile_file* file, const tmk_str* command)
       if (stat(tmk_str_cstr(&tokens[i]), &dep_stat) == 0 &&
           dep_stat.st_mtim.tv_sec > o_file_stat.st_mtim.tv_sec)
       {
-        for (size_t i = 0; i < n_tokens; ++i)
-        {
-          tmk_str_free(&tokens[i]);
-        }
-        free(tokens);
-        return true;
+        has_newer_dependency = true;
+        break;
       }
     }
 
@@ -217,25 +235,10 @@ static bool should_recompile(compile_file* file, const tmk_str* command)
     }
     free(tokens);
   }
+  tmk_str_free(&line);
   fclose(dep);
 
-  FILE* log = fopen(".tinymake_log", "r");
-  bool has_command_changed = true;
-  while (fgets(tmk_str_data(&line), line.capacity, log))
-  {
-    tmk_str_set_len(&line, strlen(tmk_str_data(&line)));
-    tmk_str_trim(&line);
-
-    if (tmk_str_equal(&line, command))
-    {
-      has_command_changed = false;
-      break;
-    }
-  }
-  tmk_str_free(&line);
-  fclose(log);
-
-  return has_command_changed;
+  return has_newer_dependency || !is_command_in_log(command);
 }
 
 int generate_object_files(build_context* ctx, target* target)
@@ -248,6 +251,8 @@ int generate_object_files(build_context* ctx, target* target)
   for (size_t i = 0; i < n_files; ++i)
   {
     jobs[i].file = &target->source_files[i];
+    jobs[i].command = (tmk_str){0};
+    jobs[i].buffer = (tmk_str){0};
     jobs[i].status = PENDING;
     pfds[i].fd = -1;
   }
@@ -496,29 +501,6 @@ exit_error:
   return -1;
 }
 
-static bool should_relink(const tmk_str* command)
-{
-  FILE* log = fopen(".tinymake_log", "r");
-  bool has_command_changed = true;
-
-  tmk_str line = tmk_str_create_with_capacity(8192);
-  while (fgets(tmk_str_data(&line), line.capacity, log))
-  {
-    tmk_str_set_len(&line, strlen(tmk_str_data(&line)));
-    tmk_str_trim(&line);
-
-    if (tmk_str_equal(&line, command))
-    {
-      has_command_changed = false;
-      break;
-    }
-  }
-  tmk_str_free(&line);
-  fclose(log);
-
-  return has_command_changed;
-}
-
 int link_object_files(build_context* ctx, target* target)
 {
   tmk_str command = tmk_str_create();
@@ -558,7 +540,7 @@ int link_object_files(build_context* ctx, target* target)
   }
 
   if (has_rebuilt_file || stat(tmk_str_cstr(&target->name), &s) != 0 ||
-      should_relink(&command))
+      !is_command_in_log(&command))
   {
     log_msg(INFO, "Linking...");
     log_msg(DBG, "Link command: %s", tmk_str_cstr(&command));

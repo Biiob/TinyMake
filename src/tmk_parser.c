@@ -19,11 +19,9 @@ int parse_build_file(build_context* ctx)
 
   ctx->targets_count = 0;
 
-  tmk_str line = tmk_str_create_with_capacity(8192);
-  while (fgets(tmk_str_data(&line), line.capacity, f))
+  tmk_str line = tmk_str_create();
+  while (tmk_str_read_line(&line, f) != -1)
   {
-    tmk_str_set_len(&line, strlen(tmk_str_data(&line)));
-
     // Commentaires et lignes vides
     if (line.str[0] == '#' || isspace((unsigned char)line.str[0]))
     {
@@ -79,9 +77,15 @@ int parse_build_file(build_context* ctx)
       target* current_target = &ctx->targets[ctx->targets_count];
       current_target->type = BINARY;
 
+      // The name is written "name:", the ':' is not part of it
+      tmk_str* name = &tokens[1];
+      if (name->len > 0 && name->str[name->len - 1] == ':')
+      {
+        tmk_str_set_len(name, name->len - 1);
+      }
+
       current_target->name = tmk_str_from_cstr(BIN_DIR);
-      tmk_str_append_format(&current_target->name, "/%s",
-                            tmk_str_cstr(&tokens[1]));
+      tmk_str_append_format(&current_target->name, "/%s", tmk_str_cstr(name));
 
       log_msg(DBG, "Found target: %s", tmk_str_cstr(&current_target->name));
 
