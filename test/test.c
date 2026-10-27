@@ -17,8 +17,10 @@ int main(void)
   RUN(test_reserve);
   RUN(test_clear);
   RUN(test_free);
+  RUN(test_from_buf);
   RUN(test_from_cstr);
   RUN(test_clone);
+  RUN(test_substr);
   RUN(test_take);
   RUN(test_release);
   RUN(test_cstr);
@@ -34,7 +36,11 @@ int main(void)
   RUN(test_append_format);
   RUN(test_trim);
   RUN(test_equal);
+  RUN(test_equal_cstr);
   RUN(test_equal_nocase);
+  RUN(test_tokenize);
+  RUN(test_find_char);
+  RUN(test_rfind_char);
 
   printf("All tests passed.\n");
   return 0;

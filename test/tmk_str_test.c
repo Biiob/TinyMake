@@ -86,6 +86,16 @@ void test_free(void)
   tmk_str_free(&s);
 }
 
+void test_from_buf(void)
+{
+  const char* src = "hello world";
+  tmk_str s = tmk_str_from_buf(src, 8);
+  check_invariants(&s);
+  assert(s.len == 8);
+  assert(strcmp(s.str, "hello wo") == 0);
+  tmk_str_free(&s);
+}
+
 void test_from_cstr(void)
 {
   const char* src = "hello world";
@@ -117,6 +127,30 @@ void test_clone(void)
 
   tmk_str_free(&a);
   tmk_str_free(&b);
+}
+
+void test_substr(void)
+{
+  tmk_str a = tmk_str_from_cstr("hello world");
+  tmk_str b = tmk_str_substr(&a, 0, 5);
+  check_invariants(&b);
+  assert(b.len == 5);
+  assert(strcmp(b.str, "hello") == 0);
+  assert(a.str != b.str);
+
+  tmk_str c = tmk_str_substr(&a, 0, 0);
+  check_invariants(&c);
+  assert(strcmp(c.str, "hello world") == 0);
+  assert(a.str != c.str);
+
+  tmk_str d = tmk_str_substr(&a, 15, 5);
+  check_invariants(&d);
+  assert(strcmp(d.str, "") == 0);
+
+  tmk_str_free(&a);
+  tmk_str_free(&b);
+  tmk_str_free(&c);
+  tmk_str_free(&d);
 }
 
 void test_take(void)
@@ -337,6 +371,21 @@ void test_equal(void)
   tmk_str_free(&s2);
 }
 
+void test_equal_cstr(void)
+{
+  tmk_str s1 = tmk_str_from_cstr("hello");
+  char s2[] = "hallo";
+  assert(!tmk_str_equal_cstr(&s1, s2));
+
+  char s3[] = "hello world";
+  assert(!tmk_str_equal_cstr(&s1, s3));
+
+  char s4[] = "hello";
+  assert(tmk_str_equal_cstr(&s1, s4));
+
+  tmk_str_free(&s1);
+}
+
 void test_equal_nocase(void)
 {
   tmk_str s1 = tmk_str_from_cstr("hello");
@@ -345,4 +394,52 @@ void test_equal_nocase(void)
 
   tmk_str_free(&s1);
   tmk_str_free(&s2);
+}
+
+void test_tokenize(void)
+{
+  tmk_str s = tmk_str_from_cstr("a b c");
+  tmk_str* t;
+  size_t n_tok = tmk_str_tokenize(&t, &s, ' ');
+  assert(n_tok == 3);
+  assert(strcmp(t[0].str, "a") == 0);
+  assert(strcmp(t[1].str, "b") == 0);
+  assert(strcmp(t[2].str, "c") == 0);
+  for (size_t i = 0; i < n_tok; ++i)
+  {
+    tmk_str_free(&t[i]);
+  }
+  free(t);
+
+  tmk_str_format(&s, "  trailing  spaces  ");
+  n_tok = tmk_str_tokenize(&t, &s, ' ');
+  assert(n_tok == 2);
+  assert(strcmp(t[0].str, "trailing") == 0);
+  assert(strcmp(t[1].str, "spaces") == 0);
+  for (size_t i = 0; i < n_tok; ++i)
+  {
+    tmk_str_free(&t[i]);
+  }
+  tmk_str_free(&s);
+  free(t);
+}
+
+void test_find_char(void)
+{
+  tmk_str s = tmk_str_from_cstr("hello world");
+  size_t pos = tmk_str_find_char(&s, 'l');
+  assert(pos == 2);
+  size_t pos2 = tmk_str_find_char(&s, 'z');
+  assert(pos2 == s.len);
+  tmk_str_free(&s);
+}
+
+void test_rfind_char(void)
+{
+  tmk_str s = tmk_str_from_cstr("hello world");
+  size_t pos = tmk_str_rfind_char(&s, 'l');
+  assert(pos == 9);
+  size_t pos2 = tmk_str_rfind_char(&s, 'z');
+  assert(pos2 == s.len);
+  tmk_str_free(&s);
 }

@@ -75,36 +75,37 @@ void tmk_str_free(tmk_str* str)
 
 tmk_str tmk_str_clone(const tmk_str* other)
 {
-  char* ptr;
-  size_t capacity = allocate_or_reallocate(&ptr, other->capacity);
-  memcpy(ptr, other->str, other->len);
-  ptr[other->len] = '\0';
+  return tmk_str_from_buf(tmk_str_cstr(other), other->len);
+}
 
-  tmk_str str = {
-      .str = ptr,
-      .len = other->len,
-      .capacity = capacity,
-  };
+tmk_str tmk_str_from_buf(const char* buf, size_t n)
+{
+  tmk_str str;
+  str.capacity = allocate_or_reallocate(&str.str, n + 1);
+  memcpy(str.str, buf, n);
+  str.len = n;
+  str.str[str.len] = '\0';
 
   return str;
 }
 
 tmk_str tmk_str_from_cstr(const char* other)
 {
-  size_t other_len = strlen(other);
-  size_t needed_capacity = other_len + 1;
-  char* ptr;
-  size_t capacity = allocate_or_reallocate(&ptr, needed_capacity);
-  memcpy(ptr, other, other_len);
-  ptr[other_len] = '\0';
+  return tmk_str_from_buf(other, strlen(other));
+}
 
-  tmk_str str = {
-      .str = ptr,
-      .len = other_len,
-      .capacity = capacity,
-  };
+tmk_str tmk_str_substr(const tmk_str* str, size_t pos, size_t n)
+{
+  if (pos >= str->len)
+  {
+    return tmk_str_create();
+  }
+  if (pos + n >= str->len || n == 0)
+  {
+    n = str->len - pos;
+  }
 
-  return str;
+  return tmk_str_from_buf(str->str + pos, n);
 }
 
 tmk_str tmk_str_take(char* s)
@@ -152,6 +153,17 @@ void tmk_str_set(tmk_str* str, size_t i, char c)
 const char* tmk_str_cstr(const tmk_str* str)
 {
   return str->str;
+}
+
+char* tmk_str_data(tmk_str* str)
+{
+  return str->str;
+}
+
+void tmk_str_set_len(tmk_str* str, size_t len)
+{
+  str->len = len;
+  str->str[len] = '\0';
 }
 
 tmk_str* tmk_str_append_n(tmk_str* dst, const char* src, size_t n)
@@ -236,32 +248,26 @@ tmk_str* tmk_str_format(tmk_str* dst, const char* fmt, ...)
 
 tmk_str* tmk_str_trim(tmk_str* str)
 {
-  char* s = str->str;
-  while (*s != '\0' && isspace((unsigned char)*s))
+  size_t start = 0;
+  size_t end = str->len;
+
+  while (start < end && isspace((unsigned char)str->str[start]))
   {
-    s++;
+    ++start;
   }
 
-  char* e = s;
-  if (*s != '\0')
+  while (end > start && isspace((unsigned char)str->str[end - 1]))
   {
-    e = s + strlen(s) - 1;
-    while (e > s && isspace((unsigned char)*e))
-    {
-      e--;
-    }
-    e[1] = '\0';
+    --end;
   }
 
-  size_t len = *s == '\0' ? 0 : strlen(s);
-  char* tmp;
-  size_t capacity = allocate_or_reallocate(&tmp, len + 1);
-  memcpy(tmp, s, len);
-  tmp[len] = '\0';
-  free(str->str);
-  str->str = tmp;
+  size_t len = end - start;
+  if (start > 0)
+  {
+    memmove(str->str, str->str + start, len);
+  }
+  str->str[len] = '\0';
   str->len = len;
-  str->capacity = capacity;
 
   return str;
 }
@@ -276,6 +282,25 @@ bool tmk_str_equal(const tmk_str* str1, const tmk_str* str2)
   for (size_t i = 0; i < str1->len; ++i)
   {
     if (*tmk_str_at(str1, i) != *tmk_str_at(str2, i))
+    {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool tmk_str_equal_cstr(const tmk_str* str1, const char* str2)
+{
+  size_t len = strlen(str2);
+  if (str1->len != len)
+  {
+    return false;
+  }
+
+  for (size_t i = 0; i < str1->len; ++i)
+  {
+    if (*tmk_str_at(str1, i) != str2[i])
     {
       return false;
     }
@@ -302,39 +327,71 @@ bool tmk_str_equal_nocase(const tmk_str* str1, const tmk_str* str2)
   return true;
 }
 
-char* trim_whitespaces(char* src)
+size_t tmk_str_tokenize(tmk_str** toks, const tmk_str* str, char delim)
 {
-  char* s = src;
-  while (*s && isspace((unsigned char)*s))
+  *toks = NULL;
+
+  size_t n_tok = 0;
+  for (size_t i = 0; i < str->len; ++i)
   {
-    s++;
+    if (str->str[i] != delim && (i + 1 == str->len || str->str[i + 1] == delim))
+    {
+      ++n_tok;
+    }
   }
 
-  if (*s == '\0')
+  if (n_tok == 0)
   {
-    return s;
+    return 0;
   }
 
-  char* e = s + strlen(s) - 1;
-  while (e > s && isspace((unsigned char)*e))
+  *toks = malloc(n_tok * sizeof(tmk_str));
+  if (toks == NULL)
   {
-    e--;
+    fprintf(stderr, "Could not allocate memory: malloc failed\n");
+    abort();
   }
 
-  e[1] = '\0';
+  size_t i_tok = 0;
+  size_t start = 0;
 
-  return s;
+  for (size_t i = 0; i <= str->len; ++i)
+  {
+    if (i == str->len || str->str[i] == delim)
+    {
+      if (i > start)
+      {
+        (*toks)[i_tok++] = tmk_str_from_buf(str->str + start, i - start);
+      }
+      start = i + 1;
+    }
+  }
+
+  return i_tok;
 }
 
-size_t tokenize_line(char* line, char* tokens[])
+size_t tmk_str_find_char(const tmk_str* str, char c)
 {
-  char* save_buffer;
-  size_t token_count = 0;
-  for (char* token = strtok_r(line, " ", &save_buffer); token != NULL;
-       token = strtok_r(NULL, " ", &save_buffer), ++token_count)
+  for (size_t i = 0; i < str->len; ++i)
   {
-    tokens[token_count] = token;
+    if (str->str[i] == c)
+    {
+      return i;
+    }
   }
 
-  return token_count;
+  return str->len;
+}
+
+size_t tmk_str_rfind_char(const tmk_str* str, char c)
+{
+  for (long long i = str->len - 1; i >= 0; --i)
+  {
+    if (str->str[(size_t)i] == c)
+    {
+      return (size_t)i;
+    }
+  }
+
+  return str->len;
 }

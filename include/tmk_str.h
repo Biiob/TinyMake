@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-#define DEFAULT_STRING_SIZE 256
+#define DEFAULT_STRING_SIZE 64
 typedef struct
 {
   char* str;
@@ -31,8 +31,14 @@ void tmk_str_free(tmk_str* str);
 // Create a tmk_str from a copy of a given tmk_str
 tmk_str tmk_str_clone(const tmk_str* other);
 
+// Create a tmk_str from n given bytes of buf
+tmk_str tmk_str_from_buf(const char* buf, size_t n);
+
 // Create a tmk_str from a copy of a given null-terminated char*
 tmk_str tmk_str_from_cstr(const char* other);
+
+// Returns a substring of the original string in a new string
+tmk_str tmk_str_substr(const tmk_str* str, size_t pos, size_t n);
 
 // Create a tmk_str and take ownership of the given null-terminated char*
 tmk_str tmk_str_take(char* str);
@@ -46,8 +52,14 @@ const char* tmk_str_at(const tmk_str* str, size_t i);
 // Set the character at index i, with bounds checking
 void tmk_str_set(tmk_str* str, size_t i, char c);
 
-// Get the underlying char* null-terminated
+// Get the underlying char* null-terminated for read-only
 const char* tmk_str_cstr(const tmk_str* str);
+
+// Get the underlying char* for read/write
+char* tmk_str_data(tmk_str* str);
+
+// Sets the length and terminator, for when the string was modified manually
+void tmk_str_set_len(tmk_str* str, size_t len);
 
 // Append the content of a tmk_str to another tmk_str
 tmk_str* tmk_str_append(tmk_str* dst, const tmk_str* src);
@@ -79,10 +91,16 @@ tmk_str* tmk_str_trim(tmk_str* str);
 // Compares if two tmk_str are equal
 bool tmk_str_equal(const tmk_str* str1, const tmk_str* str2);
 
+// Compares if a string and a cstr are equal
+bool tmk_str_equal_cstr(const tmk_str* str1, const char* str2);
+
 // Compares if two tmk_str are equal, ignoring case
 bool tmk_str_equal_nocase(const tmk_str* str1, const tmk_str* str2);
 
-char* trim_whitespaces(char* src);
-size_t tokenize_line(char* line, char* tokens[]);
+size_t tmk_str_tokenize(tmk_str** toks, const tmk_str* str, char delim);
+
+size_t tmk_str_find_char(const tmk_str* str, char c);
+
+size_t tmk_str_rfind_char(const tmk_str* str, char c);
 
 #endif
