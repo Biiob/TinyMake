@@ -29,7 +29,7 @@ void test_create(void)
   tmk_str s = tmk_str_create();
   check_invariants(&s);
   assert(s.len == 0);
-  assert(s.capacity >= DEFAULT_STRING_SIZE);
+  assert(s.capacity >= TMK_STR_DEFAULT_CAP);
   assert(s.str[0] == '\0');
   tmk_str_free(&s);
 }
@@ -138,7 +138,7 @@ void test_substr(void)
   assert(strcmp(b.str, "hello") == 0);
   assert(a.str != b.str);
 
-  tmk_str c = tmk_str_substr(&a, 0, 0);
+  tmk_str c = tmk_str_substr(&a, 0, TMK_STR_NPOS);
   check_invariants(&c);
   assert(strcmp(c.str, "hello world") == 0);
   assert(a.str != c.str);
@@ -147,10 +147,20 @@ void test_substr(void)
   check_invariants(&d);
   assert(strcmp(d.str, "") == 0);
 
+  tmk_str e = tmk_str_substr(&a, 3, 0);
+  check_invariants(&e);
+  assert(e.len == 0);
+
+  tmk_str f = tmk_str_substr(&a, 6, TMK_STR_NPOS);
+  check_invariants(&f);
+  assert(strcmp(f.str, "world") == 0);
+
   tmk_str_free(&a);
   tmk_str_free(&b);
   tmk_str_free(&c);
   tmk_str_free(&d);
+  tmk_str_free(&e);
+  tmk_str_free(&f);
 }
 
 void test_take(void)
@@ -182,28 +192,6 @@ void test_cstr(void)
   assert(p == s.str);
   assert(strcmp(p, "data") == 0);
   tmk_str_free(&s);
-}
-
-void test_at(void)
-{
-  tmk_str s = tmk_str_from_cstr("abc");
-
-  const char* first = tmk_str_at(&s, 0);
-  assert(first == &s.str[0]);
-  assert(*first == 'a');
-
-  const char* last = tmk_str_at(&s, s.len - 1);
-  assert(last != NULL && *last == 'c');
-
-  /* Bounds checking: the terminator and beyond are out of range. */
-  assert(tmk_str_at(&s, s.len) == NULL);
-  assert(tmk_str_at(&s, s.len + 100) == NULL);
-  assert(tmk_str_at(&s, (size_t)-1) == NULL);
-  tmk_str_free(&s);
-
-  tmk_str e = tmk_str_create();
-  assert(tmk_str_at(&e, 0) == NULL);
-  tmk_str_free(&e);
 }
 
 void test_set(void)
@@ -263,6 +251,22 @@ void test_append(void)
 
   tmk_str_free(&src);
   tmk_str_free(&dst);
+
+  tmk_str long_str =
+      tmk_str_from_cstr("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ");
+
+  tmk_str_append(&long_str, &long_str);
+  check_invariants(&long_str);
+  assert(strcmp(long_str.str,
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+                "klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") == 0);
+
+  tmk_str_append_n(&long_str, long_str.str + 26, 26);
+  check_invariants(&long_str);
+  assert(long_str.len == 130);
+  assert(memcmp(long_str.str + 104, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 26) == 0);
+
+  tmk_str_free(&long_str);
 }
 
 void test_append_grows(void)
@@ -272,6 +276,7 @@ void test_append_grows(void)
     tmk_str_append_cstr(&s, "x");
   check_invariants(&s);
   assert(s.len == 1000);
+  assert(s.capacity < 2 * (s.len + 1));
   for (size_t i = 0; i < s.len; ++i)
     assert(s.str[i] == 'x');
   tmk_str_free(&s);
@@ -441,5 +446,50 @@ void test_rfind_char(void)
   assert(pos == 9);
   size_t pos2 = tmk_str_rfind_char(&s, 'z');
   assert(pos2 == s.len);
+  size_t pos3 = tmk_str_rfind_char(&s, 'h');
+  assert(pos3 == 0);
   tmk_str_free(&s);
+
+  tmk_str e = tmk_str_create();
+  assert(tmk_str_rfind_char(&e, 'a') == 0);
+  tmk_str_free(&e);
+}
+
+void test_read_line(void)
+{
+  FILE* f = tmpfile();
+  assert(f != NULL);
+
+  char long_line[200];
+  memset(long_line, 'a', sizeof long_line - 1);
+  long_line[sizeof long_line - 1] = '\0';
+
+  fprintf(f, "first\n\n%s\nlast without newline", long_line);
+  rewind(f);
+
+  /* Small capacity so that the long line forces getline to reallocate. */
+  tmk_str s = tmk_str_create_with_capacity(4);
+
+  assert(tmk_str_read_line(&s, f) == 6);
+  check_invariants(&s);
+  assert(strcmp(s.str, "first\n") == 0);
+
+  assert(tmk_str_read_line(&s, f) == 1);
+  check_invariants(&s);
+  assert(strcmp(s.str, "\n") == 0);
+
+  assert(tmk_str_read_line(&s, f) == (ssize_t)sizeof long_line);
+  check_invariants(&s);
+  assert(s.capacity > s.len);
+  assert(strncmp(s.str, long_line, sizeof long_line - 1) == 0);
+  assert(s.str[s.len - 1] == '\n');
+
+  assert(tmk_str_read_line(&s, f) == 20);
+  check_invariants(&s);
+  assert(strcmp(s.str, "last without newline") == 0);
+
+  assert(tmk_str_read_line(&s, f) == -1);
+
+  tmk_str_free(&s);
+  fclose(f);
 }

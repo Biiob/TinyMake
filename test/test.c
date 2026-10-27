@@ -24,7 +24,6 @@ int main(void)
   RUN(test_take);
   RUN(test_release);
   RUN(test_cstr);
-  RUN(test_at);
   RUN(test_set);
   RUN(test_append_n);
   RUN(test_append_cstr);
@@ -41,6 +40,7 @@ int main(void)
   RUN(test_tokenize);
   RUN(test_find_char);
   RUN(test_rfind_char);
+  RUN(test_read_line);
 
   printf("All tests passed.\n");
   return 0;

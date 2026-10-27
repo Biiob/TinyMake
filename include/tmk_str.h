@@ -3,9 +3,20 @@
 
 #include <stdarg.h>
 #include <stdbool.h>
-#include <stdlib.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <sys/types.h>
 
-#define DEFAULT_STRING_SIZE 64
+#define TMK_STR_DEFAULT_CAP 32
+
+// Passed as a length to mean "until the end of the string"
+#define TMK_STR_NPOS SIZE_MAX
+
+// Owning, growable string. str is always null-terminated and capacity counts
+// the terminator. A plain struct copy shares the buffer: only one of the copies
+// may be freed.
+// Functions returning tmk_str* return dst/str, to allow chaining.
 typedef struct
 {
   char* str;
@@ -13,94 +24,85 @@ typedef struct
   size_t capacity;
 } tmk_str;
 
-// Create an empty tmk_str, with default capacity
 tmk_str tmk_str_create(void);
 
-// Create an empty tmk_str, with given capacity
 tmk_str tmk_str_create_with_capacity(size_t capacity);
 
-// Allocate given capacity for the string
+// Grows to exactly capacity, never shrinks
 void tmk_str_reserve(tmk_str* str, size_t capacity);
 
-// Clears the content of the string
+// Empties the string, keeping its capacity
 void tmk_str_clear(tmk_str* str);
 
-// Free the tmk_str
+// Leaves str zeroed, so freeing twice is safe
 void tmk_str_free(tmk_str* str);
 
-// Create a tmk_str from a copy of a given tmk_str
 tmk_str tmk_str_clone(const tmk_str* other);
 
-// Create a tmk_str from n given bytes of buf
+// Copies n bytes of buf, which does not need to be null-terminated
 tmk_str tmk_str_from_buf(const char* buf, size_t n);
 
-// Create a tmk_str from a copy of a given null-terminated char*
 tmk_str tmk_str_from_cstr(const char* other);
 
-// Returns a substring of the original string in a new string
+// Copies at most n characters from pos, or until the end with TMK_STR_NPOS
+// Returns an empty string if pos is past the end
 tmk_str tmk_str_substr(const tmk_str* str, size_t pos, size_t n);
 
-// Create a tmk_str and take ownership of the given null-terminated char*
+// Takes ownership of a malloc'd null-terminated string, without copying
 tmk_str tmk_str_take(char* str);
 
-// Release ownership of the underlying char* and resets the tmk_str
+// Gives up ownership of the buffer, which the caller must free()
+// str is left zeroed, like after tmk_str_free
 char* tmk_str_release(tmk_str* str);
 
-// Returns the character at index i, with bounds checking
-const char* tmk_str_at(const tmk_str* str, size_t i);
-
-// Set the character at index i, with bounds checking
+// Does nothing if i >= len or c is '\0'
 void tmk_str_set(tmk_str* str, size_t i, char c);
 
-// Get the underlying char* null-terminated for read-only
 const char* tmk_str_cstr(const tmk_str* str);
 
-// Get the underlying char* for read/write
+// Writable buffer of capacity bytes. Call tmk_str_set_len after writing to it
 char* tmk_str_data(tmk_str* str);
 
-// Sets the length and terminator, for when the string was modified manually
+// Sets len and the terminator after writing through tmk_str_data
+// len must be strictly less than capacity
 void tmk_str_set_len(tmk_str* str, size_t len);
 
-// Append the content of a tmk_str to another tmk_str
 tmk_str* tmk_str_append(tmk_str* dst, const tmk_str* src);
 
-// Append the content of a null-terminated char* to a tmk_str
 tmk_str* tmk_str_append_cstr(tmk_str* dst, const char* src);
 
-// Appends n characters from a buffer to a tmk_str
 tmk_str* tmk_str_append_n(tmk_str* dst, const char* src, size_t n);
 
-// Appends a single character to a tmk_str
+// Does nothing if c is '\0'
 tmk_str* tmk_str_push(tmk_str* dst, char c);
 
-// Format then append the provided string with args in va_list
+// Format functions return NULL on an encoding error
+// The arguments must not point inside dst
 tmk_str* tmk_str_vappend_format(tmk_str* dst, const char* fmt, va_list args);
-
-// Format then append the provided string
 tmk_str* tmk_str_append_format(tmk_str* dst, const char* fmt, ...);
 
-// Format the given tmk_str with args in va_list
+// Same as the append versions, but replaces the content of dst
 tmk_str* tmk_str_vformat(tmk_str* dst, const char* fmt, va_list args);
-
-// Format the given tmk_str
 tmk_str* tmk_str_format(tmk_str* dst, const char* fmt, ...);
 
-// Trim whitespaces at the start and end of the tmk_str
+// Removes leading and trailing whitespace, in place
 tmk_str* tmk_str_trim(tmk_str* str);
 
-// Compares if two tmk_str are equal
 bool tmk_str_equal(const tmk_str* str1, const tmk_str* str2);
-
-// Compares if a string and a cstr are equal
 bool tmk_str_equal_cstr(const tmk_str* str1, const char* str2);
-
-// Compares if two tmk_str are equal, ignoring case
 bool tmk_str_equal_nocase(const tmk_str* str1, const tmk_str* str2);
 
+// Splits str on delim, skipping empty tokens, and returns the token count
+// *toks is a malloc'd array (NULL if no token): the caller must free each
+// token, then the array
 size_t tmk_str_tokenize(tmk_str** toks, const tmk_str* str, char delim);
 
+// Find functions return the index of c, or len if not found
 size_t tmk_str_find_char(const tmk_str* str, char c);
-
 size_t tmk_str_rfind_char(const tmk_str* str, char c);
+
+// Replaces the content of dst with the next line of f, '\n' included
+// Returns the line length, or -1 on EOF or error, leaving dst empty
+ssize_t tmk_str_read_line(tmk_str* dst, FILE* f);
 
 #endif

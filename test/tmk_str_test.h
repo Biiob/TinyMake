@@ -13,7 +13,6 @@ void test_substr(void);
 void test_take(void);
 void test_release(void);
 void test_cstr(void);
-void test_at(void);
 void test_set(void);
 void test_append_n(void);
 void test_append_cstr(void);
@@ -30,5 +29,6 @@ void test_equal_nocase(void);
 void test_tokenize(void);
 void test_find_char(void);
 void test_rfind_char(void);
+void test_read_line(void);
 
 #endif
