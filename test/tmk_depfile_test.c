@@ -1,32 +1,17 @@
 #include "tmk_depfile.h"
 
 #include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include "test_util.h"
 #include "tmk_depfile_test.h"
-
-/* Writes content to a new temporary file and returns its path. */
-static tmk_str write_depfile(const char* content)
-{
-  char name[] = "/tmp/tmk_depfile_test_XXXXXX";
-  int fd = mkstemp(name);
-  assert(fd != -1);
-
-  size_t len = strlen(content);
-  assert(write(fd, content, len) == (ssize_t)len);
-  close(fd);
-
-  return tmk_str_from_cstr(name);
-}
 
 /* Parses content and checks the result against the expected paths. */
 static void check_depfile(const char* content, const char** expected,
                           size_t n_expected)
 {
-  tmk_str path = write_depfile(content);
+  tmk_str path = test_write_temp_file(content);
 
   tmk_str_array deps;
   ssize_t n = parse_depfile(&deps, &path);
@@ -100,7 +85,7 @@ void test_depfile_growth(void)
   }
   tmk_str_push(&content, '\n');
 
-  tmk_str path = write_depfile(tmk_str_cstr(&content));
+  tmk_str path = test_write_temp_file(tmk_str_cstr(&content));
 
   tmk_str_array deps;
   ssize_t n = parse_depfile(&deps, &path);

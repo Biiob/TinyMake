@@ -62,14 +62,15 @@ typedef struct
 static void build_argv(build_context* ctx, compile_args* args)
 {
   size_t arg = 0;
-  args->argv[arg++] = tmk_str_data(&ctx->compiler);
-  for (size_t i = 0; i < ctx->compile_flags_count; ++i, ++arg)
+  args->argv[arg++] = ctx->compiler.str;
+  for (size_t i = 0; i < ctx->compile_flags.len; ++i)
   {
-    args->argv[arg] = tmk_str_data(&ctx->compile_flags[i]);
+    args->argv[arg++] = ctx->compile_flags.items[i].str;
   }
-  for (size_t i = 0; i < ctx->includes_dir_count; ++i, ++arg)
+  for (size_t i = 0; i < ctx->includes_dir.len; ++i)
   {
-    args->argv[arg] = tmk_str_data(&ctx->includes_dir[i]);
+    args->argv[arg++] = "-I";
+    args->argv[arg++] = ctx->includes_dir.items[i].str;
   }
   args->argv[arg++] = "-fdiagnostics-color=always";
   args->argv[arg++] = "-MMD";
@@ -233,7 +234,7 @@ int generate_object_files(build_context* ctx, target* target)
     pfds[i].fd = -1;
   }
 
-  size_t argc = ctx->compile_flags_count + ctx->includes_dir_count + 10;
+  size_t argc = ctx->compile_flags.len + 2 * ctx->includes_dir.len + 10;
   char* argv[argc];
   compile_args args = {0};
   args.argc = argc;
@@ -481,9 +482,9 @@ int link_object_files(build_context* ctx, target* target)
 {
   tmk_str command = tmk_str_create();
   tmk_str_append(&command, &ctx->compiler);
-  for (size_t i = 0; i < ctx->link_flags_count; ++i)
+  for (size_t i = 0; i < ctx->link_flags.len; ++i)
   {
-    tmk_str_append_format(&command, " %s", tmk_str_cstr(&ctx->link_flags[i]));
+    tmk_str_append_format(&command, " %s", ctx->link_flags.items[i].str);
   }
 
   tmk_str_append_format(&command, " -o %s", tmk_str_cstr(&target->name));

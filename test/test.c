@@ -1,6 +1,8 @@
 #include <stdio.h>
 
 #include "tmk_depfile_test.h"
+#include "tmk_log.h"
+#include "tmk_parser_test.h"
 #include "tmk_str_array_test.h"
 #include "tmk_str_test.h"
 
@@ -14,6 +16,9 @@
 
 int main(void)
 {
+  // Expected errors from the tests would drown the results
+  log_set_sink(NULL);
+
   RUN(test_create);
   RUN(test_create_with_capacity);
   RUN(test_grow_min_capacity);
@@ -58,6 +63,12 @@ int main(void)
   RUN(test_depfile_no_prerequisites);
   RUN(test_depfile_empty);
   RUN(test_depfile_missing_file);
+
+  RUN(test_parser_valid);
+  RUN(test_parser_layout);
+  RUN(test_parser_empty_list);
+  RUN(test_parser_invalid);
+  RUN(test_parser_missing_file);
 
   printf("All tests passed.\n");
   return 0;

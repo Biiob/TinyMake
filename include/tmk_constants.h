@@ -4,10 +4,7 @@
 #define OBJ_DIR "obj"
 #define BIN_DIR "bin"
 
-#define MAX_LINE_SIZE 4096
 #define MAX_C_FILES 256
-#define MAX_INCLUDE_DIRECTORIES 64
 #define MAX_TARGETS 8
-#define MAX_FLAGS 64
 
 #endif

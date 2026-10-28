@@ -6,6 +6,7 @@
 
 #include "tmk_constants.h"
 #include "tmk_str.h"
+#include "tmk_str_array.h"
 
 typedef struct
 {
@@ -38,12 +39,9 @@ typedef struct
 typedef struct
 {
   tmk_str compiler;
-  tmk_str compile_flags[MAX_FLAGS];
-  size_t compile_flags_count;
-  tmk_str link_flags[MAX_FLAGS];
-  size_t link_flags_count;
-  tmk_str includes_dir[MAX_INCLUDE_DIRECTORIES];
-  size_t includes_dir_count;
+  tmk_str_array compile_flags;
+  tmk_str_array link_flags;
+  tmk_str_array includes_dir;
   target targets[MAX_TARGETS];
   size_t targets_count;
   int n_processes;

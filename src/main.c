@@ -2,43 +2,8 @@
 #include "tmk_engine.h"
 #include "tmk_log.h"
 #include "tmk_parser.h"
+#include "tmk_str.h"
 #include "tmk_types.h"
-
-static void free_target(target* target)
-{
-  tmk_str_free(&target->name);
-  for (size_t i = 0; i < target->source_files_count; ++i)
-  {
-    tmk_str_free(&target->source_files[i].stripped_name);
-    tmk_str_free(&target->source_files[i].c_path);
-    tmk_str_free(&target->source_files[i].o_path);
-    tmk_str_free(&target->source_files[i].d_path);
-  }
-}
-
-static void free_context(build_context* ctx)
-{
-  tmk_str_free(&ctx->compiler);
-  for (size_t i = 0; i < ctx->compile_flags_count; ++i)
-  {
-    tmk_str_free(&ctx->compile_flags[i]);
-  }
-
-  for (size_t i = 0; i < ctx->link_flags_count; ++i)
-  {
-    tmk_str_free(&ctx->link_flags[i]);
-  }
-
-  for (size_t i = 0; i < ctx->includes_dir_count; ++i)
-  {
-    tmk_str_free(&ctx->includes_dir[i]);
-  }
-
-  for (size_t i = 0; i < ctx->targets_count; ++i)
-  {
-    free_target(&ctx->targets[i]);
-  }
-}
 
 int main(int argc, char* argv[])
 {
@@ -62,8 +27,11 @@ int main(int argc, char* argv[])
 
   build_context ctx = {0};
   ctx.n_processes = args.n_processes;
+  tmk_str build_file_path = tmk_str_from_cstr("build.txt");
   log_msg(DBG, "Parsing the content of 'build.txt'");
-  if (parse_build_file(&ctx) != 0)
+  int rc = parse_build_file(&ctx, &build_file_path);
+  tmk_str_free(&build_file_path);
+  if (rc != 0)
   {
     goto cleanup;
   }
@@ -87,12 +55,12 @@ int main(int argc, char* argv[])
     goto exit_error;
   }
 
-  free_context(&ctx);
+  free_build_context(&ctx);
   log_msg(INFO, "Build has ended");
   return 0;
 
 cleanup:
-  free_context(&ctx);
+  free_build_context(&ctx);
   close_log_file();
 
 exit_error:
