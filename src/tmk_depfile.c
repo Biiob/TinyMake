@@ -32,8 +32,7 @@ ssize_t parse_depfile(tmk_str_array* deps, const tmk_str* path)
         continue;
       }
 
-      tmk_str_array_push(deps, tokens.items[i]);
-      tokens.items[i] = (tmk_str){0};
+      tmk_str_array_push(deps, tmk_str_array_take(&tokens, i));
     }
     tmk_str_array_free(&tokens);
   }

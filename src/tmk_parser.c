@@ -38,8 +38,7 @@ int parse_build_file(build_context* ctx)
 
     if (tmk_str_equal_cstr(key, "cc"))
     {
-      ctx->compiler = tokens.items[2];
-      tokens.items[2] = (tmk_str){0};
+      ctx->compiler = tmk_str_array_take(&tokens, 2);
       log_msg(DBG, "Compiler: %s", tmk_str_cstr(&ctx->compiler));
     }
     else if (tmk_str_equal_cstr(key, "cflags"))
@@ -49,8 +48,7 @@ int parse_build_file(build_context* ctx)
       for (size_t i = 2; i < n_token; ++i)
       {
         log_msg(DBG, "Compile flag: %s", tmk_str_cstr(&tokens.items[i]));
-        ctx->compile_flags[i - 2] = tokens.items[i];
-        tokens.items[i] = (tmk_str){0};
+        ctx->compile_flags[i - 2] = tmk_str_array_take(&tokens, i);
       }
     }
     else if (tmk_str_equal_cstr(key, "ldflags"))
@@ -59,8 +57,7 @@ int parse_build_file(build_context* ctx)
 
       for (size_t i = 2; i < n_token; ++i)
       {
-        ctx->link_flags[i - 2] = tokens.items[i];
-        tokens.items[i] = (tmk_str){0};
+        ctx->link_flags[i - 2] = tmk_str_array_take(&tokens, i);
       }
     }
     else if (tmk_str_equal_cstr(key, "includes"))
@@ -100,8 +97,7 @@ int parse_build_file(build_context* ctx)
       for (size_t i = 2; i < n_token; ++i)
       {
         compile_file* cf = &current_target->source_files[i - 2];
-        cf->c_path = tokens.items[i];
-        tokens.items[i] = (tmk_str){0};
+        cf->c_path = tmk_str_array_take(&tokens, i);
         cf->stripped_name = get_file_name_without_ext(&cf->c_path);
         cf->o_path = tmk_str_from_cstr(OBJ_DIR);
         tmk_str_append_format(&cf->o_path, "/%s.o",

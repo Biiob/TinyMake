@@ -47,6 +47,7 @@ int main(void)
   RUN(test_str_array_zeroed);
   RUN(test_str_array_push);
   RUN(test_str_array_push_grows);
+  RUN(test_str_array_take);
   RUN(test_tokenize);
 
   RUN(test_depfile_single_line);

@@ -1,5 +1,6 @@
 #include "tmk_str_array.h"
 
+#include <assert.h>
 #include <stdlib.h>
 
 #include "tmk_mem.h"
@@ -18,6 +19,16 @@ void tmk_str_array_push(tmk_str_array* arr, tmk_str str)
 
   arr->items[arr->len] = str;
   arr->len++;
+}
+
+tmk_str tmk_str_array_take(tmk_str_array* arr, size_t i)
+{
+  assert(i < arr->len);
+
+  tmk_str str = arr->items[i];
+  arr->items[i] = (tmk_str){0};
+
+  return str;
 }
 
 void tmk_str_array_free(tmk_str_array* arr)

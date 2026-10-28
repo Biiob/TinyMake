@@ -58,6 +58,25 @@ void test_str_array_push_grows(void)
   tmk_str_array_free(&arr);
 }
 
+void test_str_array_take(void)
+{
+  tmk_str_array arr = {0};
+  tmk_str_array_push(&arr, tmk_str_from_cstr("first"));
+  tmk_str_array_push(&arr, tmk_str_from_cstr("second"));
+  char* buf = arr.items[1].str;
+
+  tmk_str taken = tmk_str_array_take(&arr, 1);
+  /* Moved, not copied, and the slot is emptied. */
+  assert(taken.str == buf);
+  assert(tmk_str_equal_cstr(&taken, "second"));
+  assert(arr.items[1].str == NULL);
+  assert(arr.len == 2);
+  assert(tmk_str_equal_cstr(&arr.items[0], "first"));
+
+  tmk_str_array_free(&arr);
+  tmk_str_free(&taken);
+}
+
 static void check_tokenize(const char* in, const char** expected,
                            size_t n_expected)
 {
