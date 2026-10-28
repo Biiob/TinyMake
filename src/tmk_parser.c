@@ -7,6 +7,7 @@
 #include "tmk_log.h"
 #include "tmk_path.h"
 #include "tmk_str.h"
+#include "tmk_str_array.h"
 
 int parse_build_file(build_context* ctx)
 {
@@ -30,14 +31,15 @@ int parse_build_file(build_context* ctx)
 
     tmk_str_trim(&line);
 
-    tmk_str* tokens;
-    size_t n_token = tmk_str_tokenize(&tokens, &line, ' ');
+    tmk_str_array tokens = tmk_str_tokenize(&line, ' ');
+    size_t n_token = tokens.len;
 
-    tmk_str* key = &tokens[0];
+    tmk_str* key = &tokens.items[0];
 
     if (tmk_str_equal_cstr(key, "cc"))
     {
-      ctx->compiler = tmk_str_take(tmk_str_release(&tokens[2]));
+      ctx->compiler = tokens.items[2];
+      tokens.items[2] = (tmk_str){0};
       log_msg(DBG, "Compiler: %s", tmk_str_cstr(&ctx->compiler));
     }
     else if (tmk_str_equal_cstr(key, "cflags"))
@@ -46,8 +48,9 @@ int parse_build_file(build_context* ctx)
 
       for (size_t i = 2; i < n_token; ++i)
       {
-        log_msg(DBG, "Compile flag: %s", tmk_str_cstr(&tokens[i]));
-        ctx->compile_flags[i - 2] = tmk_str_take(tmk_str_release(&tokens[i]));
+        log_msg(DBG, "Compile flag: %s", tmk_str_cstr(&tokens.items[i]));
+        ctx->compile_flags[i - 2] = tokens.items[i];
+        tokens.items[i] = (tmk_str){0};
       }
     }
     else if (tmk_str_equal_cstr(key, "ldflags"))
@@ -56,7 +59,8 @@ int parse_build_file(build_context* ctx)
 
       for (size_t i = 2; i < n_token; ++i)
       {
-        ctx->link_flags[i - 2] = tmk_str_take(tmk_str_release(&tokens[i]));
+        ctx->link_flags[i - 2] = tokens.items[i];
+        tokens.items[i] = (tmk_str){0};
       }
     }
     else if (tmk_str_equal_cstr(key, "includes"))
@@ -66,10 +70,10 @@ int parse_build_file(build_context* ctx)
 
       for (size_t i = 2; i < n_token; ++i)
       {
-        log_msg(DBG, "Include directory: %s", tmk_str_cstr(&tokens[i]));
+        log_msg(DBG, "Include directory: %s", tmk_str_cstr(&tokens.items[i]));
         ctx->includes_dir[i - 2] = tmk_str_create();
         tmk_str_format(&ctx->includes_dir[i - 2], "-I%s",
-                       tmk_str_cstr(&tokens[i]));
+                       tmk_str_cstr(&tokens.items[i]));
       }
     }
     else if (tmk_str_equal_cstr(key, "binary"))
@@ -78,7 +82,7 @@ int parse_build_file(build_context* ctx)
       current_target->type = BINARY;
 
       // The name is written "name:", the ':' is not part of it
-      tmk_str* name = &tokens[1];
+      tmk_str* name = &tokens.items[1];
       if (name->len > 0 && name->str[name->len - 1] == ':')
       {
         tmk_str_set_len(name, name->len - 1);
@@ -96,7 +100,8 @@ int parse_build_file(build_context* ctx)
       for (size_t i = 2; i < n_token; ++i)
       {
         compile_file* cf = &current_target->source_files[i - 2];
-        cf->c_path = tmk_str_take(tmk_str_release(&tokens[i]));
+        cf->c_path = tokens.items[i];
+        tokens.items[i] = (tmk_str){0};
         cf->stripped_name = get_file_name_without_ext(&cf->c_path);
         cf->o_path = tmk_str_from_cstr(OBJ_DIR);
         tmk_str_append_format(&cf->o_path, "/%s.o",
@@ -110,11 +115,7 @@ int parse_build_file(build_context* ctx)
       }
       ctx->targets_count++;
     }
-    for (size_t i = 0; i < n_token; ++i)
-    {
-      tmk_str_free(&tokens[i]);
-    }
-    free(tokens);
+    tmk_str_array_free(&tokens);
   }
   tmk_str_free(&line);
 

@@ -11,8 +11,10 @@
 #include <unistd.h>
 
 #include "tmk_constants.h"
+#include "tmk_depfile.h"
 #include "tmk_log.h"
 #include "tmk_str.h"
+#include "tmk_str_array.h"
 #include "tmk_types.h"
 
 extern char** environ;
@@ -176,67 +178,41 @@ static bool should_recompile(compile_file* file, const tmk_str* command)
   }
 
   struct stat o_file_stat = {0};
-  struct stat d_file_stat = {0};
 
-  // Si le fichier .o ou .d est manquant, on recompile
-  if (stat(tmk_str_cstr(&file->o_path), &o_file_stat) != 0 ||
-      stat(tmk_str_cstr(&file->d_path), &d_file_stat) != 0)
+  // If the .o file is missing, recompile
+  if (stat(tmk_str_cstr(&file->o_path), &o_file_stat) != 0)
   {
     return true;
   }
 
-  // Si le fichier .o est plus ancien que le fichier .c, on recompile
+  // If the .o file is older than the .c file, recompile
   if (o_file_stat.st_mtim.tv_sec < c_file_stat.st_mtim.tv_sec)
   {
     return true;
   }
 
-  // Si une des dépendances dans le fichier .d est plus récent que le fichier
-  // .o, on recompile
-  FILE* dep = fopen(tmk_str_cstr(&file->d_path), "r");
-  if (dep == NULL)
+  // If the .d file can't be read or one of the dependency is newer than the .o
+  // file, recompile
+  tmk_str_array deps;
+  if (parse_depfile(&deps, &file->d_path) == -1)
   {
-    log_msg(WARN,
-            "Could not find or access dependency file: %s. Recompiling...",
+    log_msg(DBG, "Could not read dependency file: %s. Recompiling...",
             tmk_str_cstr(&file->d_path));
     return true;
   }
 
-  bool is_first_line = true;
   bool has_newer_dependency = false;
-  tmk_str line = tmk_str_create();
-  while (!has_newer_dependency && tmk_str_read_line(&line, dep) != -1)
+  for (size_t i = 0; i < deps.len; ++i)
   {
-    tmk_str_trim(&line);
-    tmk_str* tokens;
-    size_t n_tokens = tmk_str_tokenize(&tokens, &line, ' ');
-    for (size_t i = is_first_line ? 1 : 0; i < n_tokens; ++i)
+    struct stat dep_stat;
+    if (stat(tmk_str_cstr(&deps.items[i]), &dep_stat) == 0 &&
+        dep_stat.st_mtim.tv_sec > o_file_stat.st_mtim.tv_sec)
     {
-      // Line continuation, not a dependency
-      if (tokens[i].str[0] == '\\')
-      {
-        continue;
-      }
-
-      struct stat dep_stat;
-      if (stat(tmk_str_cstr(&tokens[i]), &dep_stat) == 0 &&
-          dep_stat.st_mtim.tv_sec > o_file_stat.st_mtim.tv_sec)
-      {
-        has_newer_dependency = true;
-        break;
-      }
+      has_newer_dependency = true;
+      break;
     }
-
-    is_first_line = false;
-
-    for (size_t i = 0; i < n_tokens; ++i)
-    {
-      tmk_str_free(&tokens[i]);
-    }
-    free(tokens);
   }
-  tmk_str_free(&line);
-  fclose(dep);
+  tmk_str_array_free(&deps);
 
   return has_newer_dependency || !is_command_in_log(command);
 }
