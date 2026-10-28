@@ -8,8 +8,6 @@
 #include <stdio.h>
 #include <sys/types.h>
 
-#define TMK_STR_DEFAULT_CAP 32
-
 // Passed as a length to mean "until the end of the string"
 #define TMK_STR_NPOS SIZE_MAX
 
@@ -92,10 +90,6 @@ bool tmk_str_equal(const tmk_str* str1, const tmk_str* str2);
 bool tmk_str_equal_cstr(const tmk_str* str1, const char* str2);
 bool tmk_str_equal_nocase(const tmk_str* str1, const tmk_str* str2);
 
-// Splits str on delim, skipping empty tokens, and returns the token count
-// *toks is a malloc'd array (NULL if no token): the caller must free each
-// token, then the array
-size_t tmk_str_tokenize(tmk_str** toks, const tmk_str* str, char delim);
 
 // Find functions return the index of c, or len if not found
 size_t tmk_str_find_char(const tmk_str* str, char c);

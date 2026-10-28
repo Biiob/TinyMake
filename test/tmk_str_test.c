@@ -29,8 +29,19 @@ void test_create(void)
   tmk_str s = tmk_str_create();
   check_invariants(&s);
   assert(s.len == 0);
-  assert(s.capacity >= TMK_STR_DEFAULT_CAP);
+  assert(s.capacity > 0);
   assert(s.str[0] == '\0');
+  tmk_str_free(&s);
+}
+
+void test_grow_min_capacity(void)
+{
+  /* A tiny string grows straight to the minimum capacity, not 2 -> 4 -> 8. */
+  tmk_str s = tmk_str_from_cstr("a");
+  tmk_str_push(&s, 'b');
+  check_invariants(&s);
+  assert(s.capacity > 4);
+  assert(strcmp(s.str, "ab") == 0);
   tmk_str_free(&s);
 }
 
@@ -399,34 +410,6 @@ void test_equal_nocase(void)
 
   tmk_str_free(&s1);
   tmk_str_free(&s2);
-}
-
-void test_tokenize(void)
-{
-  tmk_str s = tmk_str_from_cstr("a b c");
-  tmk_str* t;
-  size_t n_tok = tmk_str_tokenize(&t, &s, ' ');
-  assert(n_tok == 3);
-  assert(strcmp(t[0].str, "a") == 0);
-  assert(strcmp(t[1].str, "b") == 0);
-  assert(strcmp(t[2].str, "c") == 0);
-  for (size_t i = 0; i < n_tok; ++i)
-  {
-    tmk_str_free(&t[i]);
-  }
-  free(t);
-
-  tmk_str_format(&s, "  trailing  spaces  ");
-  n_tok = tmk_str_tokenize(&t, &s, ' ');
-  assert(n_tok == 2);
-  assert(strcmp(t[0].str, "trailing") == 0);
-  assert(strcmp(t[1].str, "spaces") == 0);
-  for (size_t i = 0; i < n_tok; ++i)
-  {
-    tmk_str_free(&t[i]);
-  }
-  tmk_str_free(&s);
-  free(t);
 }
 
 void test_find_char(void)

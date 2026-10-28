@@ -8,30 +8,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-static size_t allocate_or_reallocate(char** str, size_t capacity)
+#include "tmk_mem.h"
+
+#define TMK_STR_MIN_CAP 32
+
+// Sets the capacity to exactly capacity bytes
+static void resize(tmk_str* str, size_t capacity)
 {
-  if (*str == NULL)
-  {
-    char* tmp = malloc(capacity);
-    if (tmp == NULL)
-    {
-      fprintf(stderr, "Could not allocate memory: malloc failed\n");
-      abort();
-    }
-    *str = tmp;
-    return capacity;
-  }
-  else
-  {
-    char* tmp = realloc(*str, capacity);
-    if (tmp == NULL)
-    {
-      fprintf(stderr, "Could not allocate memory: realloc failed\n");
-      abort();
-    }
-    *str = tmp;
-    return capacity;
-  }
+  str->str = tmk_xrealloc(str->str, capacity);
+  str->capacity = capacity;
 }
 
 static void grow(tmk_str* str, size_t needed)
@@ -42,13 +27,14 @@ static void grow(tmk_str* str, size_t needed)
   }
 
   size_t capacity = str->capacity * 2;
+  capacity = capacity < TMK_STR_MIN_CAP ? TMK_STR_MIN_CAP : capacity;
   capacity = capacity < needed ? needed : capacity;
-  str->capacity = allocate_or_reallocate(&str->str, capacity);
+  resize(str, capacity);
 }
 
 tmk_str tmk_str_create(void)
 {
-  tmk_str str = tmk_str_create_with_capacity(TMK_STR_DEFAULT_CAP);
+  tmk_str str = tmk_str_create_with_capacity(TMK_STR_MIN_CAP);
   return str;
 }
 
@@ -57,7 +43,7 @@ tmk_str tmk_str_create_with_capacity(size_t capacity)
   capacity = capacity == 0 ? 1 : capacity;
 
   tmk_str str = {0};
-  str.capacity = allocate_or_reallocate(&str.str, capacity);
+  resize(&str, capacity);
   str.str[0] = '\0';
 
   return str;
@@ -67,7 +53,7 @@ void tmk_str_reserve(tmk_str* str, size_t capacity)
 {
   if (capacity > str->capacity)
   {
-    str->capacity = allocate_or_reallocate(&str->str, capacity);
+    resize(str, capacity);
   }
 }
 
@@ -93,8 +79,7 @@ tmk_str tmk_str_clone(const tmk_str* other)
 
 tmk_str tmk_str_from_buf(const char* buf, size_t n)
 {
-  tmk_str str = {0};
-  str.capacity = allocate_or_reallocate(&str.str, n + 1);
+  tmk_str str = tmk_str_create_with_capacity(n + 1);
   memcpy(str.str, buf, n);
   str.len = n;
   str.str[str.len] = '\0';
@@ -327,49 +312,6 @@ bool tmk_str_equal_nocase(const tmk_str* str1, const tmk_str* str2)
   }
 
   return true;
-}
-
-size_t tmk_str_tokenize(tmk_str** toks, const tmk_str* str, char delim)
-{
-  *toks = NULL;
-
-  size_t n_tok = 0;
-  for (size_t i = 0; i < str->len; ++i)
-  {
-    if (str->str[i] != delim && (i + 1 == str->len || str->str[i + 1] == delim))
-    {
-      ++n_tok;
-    }
-  }
-
-  if (n_tok == 0)
-  {
-    return 0;
-  }
-
-  *toks = malloc(n_tok * sizeof(tmk_str));
-  if (*toks == NULL)
-  {
-    fprintf(stderr, "Could not allocate memory: malloc failed\n");
-    abort();
-  }
-
-  size_t i_tok = 0;
-  size_t start = 0;
-
-  for (size_t i = 0; i <= str->len; ++i)
-  {
-    if (i == str->len || str->str[i] == delim)
-    {
-      if (i > start)
-      {
-        (*toks)[i_tok++] = tmk_str_from_buf(str->str + start, i - start);
-      }
-      start = i + 1;
-    }
-  }
-
-  return i_tok;
 }
 
 size_t tmk_str_find_char(const tmk_str* str, char c)

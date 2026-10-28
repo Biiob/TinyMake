@@ -2,6 +2,7 @@
 #define TMK_STR_TEST_H
 
 void test_create(void);
+void test_grow_min_capacity(void);
 void test_create_with_capacity(void);
 void test_reserve(void);
 void test_clear(void);
@@ -26,7 +27,6 @@ void test_trim(void);
 void test_equal(void);
 void test_equal_cstr(void);
 void test_equal_nocase(void);
-void test_tokenize(void);
 void test_find_char(void);
 void test_rfind_char(void);
 void test_read_line(void);
