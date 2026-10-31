@@ -170,7 +170,6 @@ static int parse_binary(build_context* ctx, const parse_state* st,
     cf->d_path = tmk_str_from_cstr(OBJ_DIR);
     tmk_str_append_format(&cf->d_path, "/%s.d",
                           tmk_str_cstr(&cf->stripped_name));
-    cf->was_rebuilt = false;
 
     log_msg(DBG, "File to compile: %s", tmk_str_cstr(&cf->c_path));
   }

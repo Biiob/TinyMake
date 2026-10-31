@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include "tmk_cmdlog_test.h"
 #include "tmk_depfile_test.h"
 #include "tmk_log.h"
 #include "tmk_parser_test.h"
@@ -69,6 +70,27 @@ int main(void)
   RUN(test_parser_empty_list);
   RUN(test_parser_invalid);
   RUN(test_parser_missing_file);
+
+  RUN(test_cmdlog_load_missing_file);
+  RUN(test_cmdlog_load_empty_file);
+  RUN(test_cmdlog_load_header_only);
+  RUN(test_cmdlog_load_entries);
+  RUN(test_cmdlog_load_no_trailing_newline);
+  RUN(test_cmdlog_load_skipped_lines);
+  RUN(test_cmdlog_load_tab_in_command);
+  RUN(test_cmdlog_load_wrong_header);
+  RUN(test_cmdlog_find);
+  RUN(test_cmdlog_record_new_output);
+  RUN(test_cmdlog_record_existing_output);
+  RUN(test_cmdlog_record_copies);
+  RUN(test_cmdlog_save_format);
+  RUN(test_cmdlog_save_empty);
+  RUN(test_cmdlog_save_uses_path);
+  RUN(test_cmdlog_save_replaces_existing);
+  RUN(test_cmdlog_save_invalid_path);
+  RUN(test_cmdlog_round_trip);
+  RUN(test_cmdlog_round_trip_is_stable);
+  RUN(test_cmdlog_free);
 
   printf("All tests passed.\n");
   return 0;

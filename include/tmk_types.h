@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#include "tmk_cmdlog.h"
 #include "tmk_constants.h"
 #include "tmk_str.h"
 #include "tmk_str_array.h"
@@ -19,7 +20,6 @@ typedef struct
   tmk_str c_path;
   tmk_str o_path;
   tmk_str d_path;
-  bool was_rebuilt;
 } compile_file;
 
 typedef enum
@@ -38,6 +38,7 @@ typedef struct
 
 typedef struct
 {
+  tmk_cmdlog cmdlog;
   tmk_str compiler;
   tmk_str_array compile_flags;
   tmk_str_array link_flags;

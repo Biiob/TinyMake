@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "tmk_cmdlog.h"
 #include "tmk_constants.h"
 #include "tmk_depfile.h"
 #include "tmk_log.h"
@@ -18,10 +19,6 @@
 #include "tmk_types.h"
 
 extern char** environ;
-
-static int g_log_fd = 0;
-static FILE* g_log_file = NULL;
-static char g_log_name[21] = ".tinymake_log_XXXXXX";
 
 typedef enum
 {
@@ -97,19 +94,6 @@ static tmk_str build_display_command(const compile_args* args)
   return command;
 }
 
-static void print_command_to_log(const tmk_str* command)
-{
-  size_t bytes_written = fwrite(tmk_str_cstr(command), sizeof(char),
-                                command->len, g_log_file);
-  if (bytes_written != command->len)
-  {
-    log_msg(WARN,
-            "Command line in the log file is truncated. Will trigger a "
-            "recompilation on the next run");
-  }
-  putc('\n', g_log_file);
-}
-
 static child_result wait_child(pid_t pid, int* detail)
 {
   int status;
@@ -142,33 +126,17 @@ static child_result wait_child(pid_t pid, int* detail)
   return CHILD_WAIT_ERROR;
 }
 
-static bool is_command_in_log(const tmk_str* command)
+static bool is_newer(const struct stat* a, const struct stat* b)
 {
-  FILE* log = fopen(".tinymake_log", "r");
-  if (log == NULL)
+  if (a->st_mtim.tv_sec != b->st_mtim.tv_sec)
   {
-    return false;
+    return a->st_mtim.tv_sec > b->st_mtim.tv_sec;
   }
-
-  bool found = false;
-  tmk_str line = tmk_str_create();
-  while (tmk_str_read_line(&line, log) != -1)
-  {
-    tmk_str_trim(&line);
-
-    if (tmk_str_equal(&line, command))
-    {
-      found = true;
-      break;
-    }
-  }
-  tmk_str_free(&line);
-  fclose(log);
-
-  return found;
+  return a->st_mtim.tv_nsec > b->st_mtim.tv_nsec;
 }
 
-static bool should_recompile(compile_file* file, const tmk_str* command)
+static bool should_recompile(compile_file* file, const tmk_cmdlog* cmdlog,
+                             const tmk_str* command)
 {
   struct stat c_file_stat;
   if (stat(tmk_str_cstr(&file->c_path), &c_file_stat) != 0)
@@ -187,7 +155,7 @@ static bool should_recompile(compile_file* file, const tmk_str* command)
   }
 
   // If the .o file is older than the .c file, recompile
-  if (o_file_stat.st_mtim.tv_sec < c_file_stat.st_mtim.tv_sec)
+  if (is_newer(&c_file_stat, &o_file_stat))
   {
     return true;
   }
@@ -207,7 +175,7 @@ static bool should_recompile(compile_file* file, const tmk_str* command)
   {
     struct stat dep_stat;
     if (stat(tmk_str_cstr(&deps.items[i]), &dep_stat) == 0 &&
-        dep_stat.st_mtim.tv_sec > o_file_stat.st_mtim.tv_sec)
+        is_newer(&dep_stat, &o_file_stat))
     {
       has_newer_dependency = true;
       break;
@@ -215,7 +183,12 @@ static bool should_recompile(compile_file* file, const tmk_str* command)
   }
   tmk_str_array_free(&deps);
 
-  return has_newer_dependency || !is_command_in_log(command);
+  // If the command is not already recorded in the command log, recompile
+  const tmk_str* recorded = tmk_cmdlog_find(cmdlog, &file->o_path);
+  bool is_command_recorded = recorded != NULL &&
+                             tmk_str_equal(command, recorded);
+
+  return has_newer_dependency || !is_command_recorded;
 }
 
 int generate_object_files(build_context* ctx, target* target)
@@ -232,6 +205,7 @@ int generate_object_files(build_context* ctx, target* target)
     jobs[i].buffer = (tmk_str){0};
     jobs[i].status = PENDING;
     pfds[i].fd = -1;
+    pfds[i].events = 0;
   }
 
   size_t argc = ctx->compile_flags.len + 2 * ctx->includes_dir.len + 10;
@@ -287,11 +261,10 @@ int generate_object_files(build_context* ctx, target* target)
       jobs[j].command = build_display_command(&args);
       tmk_str_trim(&jobs[j].command);
 
-      if (!should_recompile(jobs[j].file, &jobs[j].command))
+      if (!should_recompile(jobs[j].file, &ctx->cmdlog, &jobs[j].command))
       {
         log_msg(INFO, "Skipping compilation of: %s",
                 tmk_str_cstr(&jobs[j].file->c_path));
-        print_command_to_log(&jobs[j].command);
         jobs[j].status = SKIPPED;
         tmk_str_free(&jobs[j].command);
       }
@@ -415,10 +388,10 @@ int generate_object_files(build_context* ctx, target* target)
           {
             case CHILD_OK:
               jobs[i].status = DONE;
-              jobs[i].file->was_rebuilt = true;
               log_msg(INFO, "%s\n%s", tmk_str_cstr(&jobs[i].command),
                       tmk_str_cstr(&jobs[i].buffer));
-              print_command_to_log(&jobs[i].command);
+              tmk_cmdlog_record(&ctx->cmdlog, &jobs[i].file->o_path,
+                                &jobs[i].command);
               break;
 
             case CHILD_EXIT_FAILURE:
@@ -495,33 +468,35 @@ int link_object_files(build_context* ctx, target* target)
                           tmk_str_cstr(&target->source_files[i].o_path));
   }
 
-  size_t bytes_written = fwrite(tmk_str_cstr(&command), sizeof(char),
-                                command.len, g_log_file);
-  if (bytes_written != command.len)
-  {
-    log_msg(WARN, "Log line might be incomplete");
-  }
-  putc('\n', g_log_file);
-
   struct stat s;
+  bool target_exists = stat(tmk_str_cstr(&target->name), &s) == 0;
   int rc = 0;
 
-  bool has_rebuilt_file = false;
-  for (size_t i = 0; i < target->source_files_count; ++i)
+  bool should_relink = false;
+  for (size_t i = 0; target_exists && i < target->source_files_count; ++i)
   {
-    if (target->source_files[i].was_rebuilt)
+    struct stat file_stat;
+    if (stat(tmk_str_cstr(&target->source_files[i].o_path), &file_stat) != 0 ||
+        is_newer(&file_stat, &s))
     {
-      has_rebuilt_file = true;
+      should_relink = true;
       break;
     }
   }
 
-  if (has_rebuilt_file || stat(tmk_str_cstr(&target->name), &s) != 0 ||
-      !is_command_in_log(&command))
+  const tmk_str* recorded = tmk_cmdlog_find(&ctx->cmdlog, &target->name);
+  bool is_command_recorded = recorded != NULL &&
+                             tmk_str_equal(&command, recorded);
+
+  if (!target_exists || should_relink || !is_command_recorded)
   {
     log_msg(INFO, "Linking...");
     log_msg(DBG, "Link command: %s", tmk_str_cstr(&command));
     rc = system(tmk_str_cstr(&command));
+    if (rc == 0)
+    {
+      tmk_cmdlog_record(&ctx->cmdlog, &target->name, &command);
+    }
   }
   else
   {
@@ -543,53 +518,5 @@ int create_needed_directories()
             errno);
     return -1;
   }
-  return 0;
-}
-
-int open_log_file()
-{
-  g_log_fd = mkstemp(g_log_name);
-  if (g_log_fd == -1)
-  {
-    log_msg(ERROR, "mkstemp: %s", strerror(errno));
-    return -1;
-  }
-
-  g_log_file = fdopen(g_log_fd, "w");
-  if (g_log_file == NULL)
-  {
-    log_msg(ERROR, "fdopen: %s", strerror(errno));
-    close(g_log_fd);
-    unlink(g_log_name);
-    return -1;
-  }
-
-  return 0;
-}
-
-int close_log_file()
-{
-  if (fflush(g_log_file) != 0 || fsync(g_log_fd) != 0)
-  {
-    log_msg(ERROR, "fflush/fsync: %s", strerror(errno));
-    fclose(g_log_file);
-    unlink(g_log_name);
-    return -1;
-  }
-
-  if (fclose(g_log_file) != 0)
-  {
-    log_msg(ERROR, "fclose: %s", strerror(errno));
-    unlink(g_log_name);
-    return -1;
-  }
-
-  if (rename(g_log_name, ".tinymake_log") != 0)
-  {
-    log_msg(ERROR, "rename: %s", strerror(errno));
-    unlink(g_log_name);
-    return -1;
-  }
-
   return 0;
 }
