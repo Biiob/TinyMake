@@ -11,8 +11,8 @@
 #include <unistd.h>
 
 #include "tmk_cmdlog.h"
-#include "tmk_constants.h"
 #include "tmk_depfile.h"
+#include "tmk_fs.h"
 #include "tmk_log.h"
 #include "tmk_str.h"
 #include "tmk_str_array.h"
@@ -124,15 +124,6 @@ static child_result wait_child(pid_t pid, int* detail)
 
   *detail = 0;
   return CHILD_WAIT_ERROR;
-}
-
-static bool is_newer(const struct stat* a, const struct stat* b)
-{
-  if (a->st_mtim.tv_sec != b->st_mtim.tv_sec)
-  {
-    return a->st_mtim.tv_sec > b->st_mtim.tv_sec;
-  }
-  return a->st_mtim.tv_nsec > b->st_mtim.tv_nsec;
 }
 
 static bool should_recompile(compile_file* file, const tmk_cmdlog* cmdlog,
@@ -506,17 +497,4 @@ int link_object_files(build_context* ctx, target* target)
   tmk_str_free(&command);
 
   return rc;
-}
-
-int create_needed_directories()
-{
-  if ((mkdir(BIN_DIR, 0755) == -1 && errno != EEXIST) ||
-      (mkdir(OBJ_DIR, 0755) == -1 && errno != EEXIST))
-  {
-    log_msg(ERROR,
-            "Could not create binary or object directories. Error code: %d",
-            errno);
-    return -1;
-  }
-  return 0;
 }

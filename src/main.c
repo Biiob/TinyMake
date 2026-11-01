@@ -1,6 +1,7 @@
 #include "tmk_cli_parser.h"
 #include "tmk_cmdlog.h"
 #include "tmk_engine.h"
+#include "tmk_fs.h"
 #include "tmk_log.h"
 #include "tmk_parser.h"
 #include "tmk_str.h"
@@ -16,7 +17,7 @@ int main(int argc, char* argv[])
     goto exit_error;
   }
 
-  if (create_needed_directories() != 0)
+  if (create_work_directories() != 0)
   {
     goto exit_error;
   }

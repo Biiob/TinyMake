@@ -3,7 +3,6 @@
 
 #include "tmk_types.h"
 
-int create_needed_directories();
 int generate_object_files(build_context* ctx, target* target);
 int link_object_files(build_context* ctx, target* target);
 
