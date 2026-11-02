@@ -160,18 +160,9 @@ static int parse_binary(build_context* ctx, const parse_state* st,
 
   for (size_t i = 2; i < tokens->len; ++i)
   {
-    compile_file* cf =
-        &current_target->source_files[current_target->source_files_count++];
-    cf->c_path = tmk_str_array_take(tokens, i);
-    cf->stripped_name = get_file_name_without_ext(&cf->c_path);
-    cf->o_path = tmk_str_from_cstr(OBJ_DIR);
-    tmk_str_append_format(&cf->o_path, "/%s.o",
-                          tmk_str_cstr(&cf->stripped_name));
-    cf->d_path = tmk_str_from_cstr(OBJ_DIR);
-    tmk_str_append_format(&cf->d_path, "/%s.d",
-                          tmk_str_cstr(&cf->stripped_name));
-
-    log_msg(DBG, "File to compile: %s", tmk_str_cstr(&cf->c_path));
+    log_msg(DBG, "File to compile: %s", tmk_str_cstr(&tokens->items[i]));
+    current_target->source_files[current_target->source_files_count++] =
+        create_compile_file(&tokens->items[i]);
   }
 
   return 0;

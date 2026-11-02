@@ -126,60 +126,41 @@ static child_result wait_child(pid_t pid, int* detail)
   return CHILD_WAIT_ERROR;
 }
 
-static bool should_recompile(compile_file* file, const tmk_cmdlog* cmdlog,
-                             const tmk_str* command)
+static bool up_to_date(const tmk_str* output, const tmk_str_array* inputs,
+                       const tmk_str* command, const tmk_cmdlog* cmdlog)
 {
-  struct stat c_file_stat;
-  if (stat(tmk_str_cstr(&file->c_path), &c_file_stat) != 0)
+  struct stat out_stat;
+
+  // Output does not exist
+  if (stat(tmk_str_cstr(output), &out_stat) != 0)
   {
-    log_msg(ERROR, "Could not find or access the following file: %s",
-            tmk_str_cstr(&file->c_path));
     return false;
   }
 
-  struct stat o_file_stat = {0};
-
-  // If the .o file is missing, recompile
-  if (stat(tmk_str_cstr(&file->o_path), &o_file_stat) != 0)
+  for (size_t i = 0; i < inputs->len; ++i)
   {
-    return true;
-  }
-
-  // If the .o file is older than the .c file, recompile
-  if (is_newer(&c_file_stat, &o_file_stat))
-  {
-    return true;
-  }
-
-  // If the .d file can't be read or one of the dependency is newer than the .o
-  // file, recompile
-  tmk_str_array deps;
-  if (parse_depfile(&deps, &file->d_path) == -1)
-  {
-    log_msg(DBG, "Could not read dependency file: %s. Recompiling...",
-            tmk_str_cstr(&file->d_path));
-    return true;
-  }
-
-  bool has_newer_dependency = false;
-  for (size_t i = 0; i < deps.len; ++i)
-  {
-    struct stat dep_stat;
-    if (stat(tmk_str_cstr(&deps.items[i]), &dep_stat) == 0 &&
-        is_newer(&dep_stat, &o_file_stat))
+    struct stat in_stat;
+    // Input does not exist
+    if (stat(tmk_str_cstr(&inputs->items[i]), &in_stat) != 0)
     {
-      has_newer_dependency = true;
-      break;
+      log_msg(ERROR, "Could not find or access the input file: %s",
+              tmk_str_cstr(&inputs->items[i]));
+      return false;
+    }
+
+    // Input is newer than output
+    if (is_newer(&in_stat, &out_stat))
+    {
+      return false;
     }
   }
-  tmk_str_array_free(&deps);
 
-  // If the command is not already recorded in the command log, recompile
-  const tmk_str* recorded = tmk_cmdlog_find(cmdlog, &file->o_path);
+  // Command is already present in the command log
+  const tmk_str* recorded = tmk_cmdlog_find(cmdlog, output);
   bool is_command_recorded = recorded != NULL &&
                              tmk_str_equal(command, recorded);
 
-  return has_newer_dependency || !is_command_recorded;
+  return is_command_recorded;
 }
 
 int generate_object_files(build_context* ctx, target* target)
@@ -252,7 +233,18 @@ int generate_object_files(build_context* ctx, target* target)
       jobs[j].command = build_display_command(&args);
       tmk_str_trim(&jobs[j].command);
 
-      if (!should_recompile(jobs[j].file, &ctx->cmdlog, &jobs[j].command))
+      tmk_str_array inputs = {0};
+      bool has_depfile = true;
+      if (parse_depfile(&inputs, &jobs[j].file->d_path) == -1)
+      {
+        log_msg(DBG, "Could not read dependency file: %s. Recompiling...",
+                tmk_str_cstr(&jobs[j].file->d_path));
+        has_depfile = false;
+      }
+      tmk_str_array_push(&inputs, tmk_str_clone(&jobs[j].file->c_path));
+
+      if (has_depfile && up_to_date(&jobs[j].file->o_path, &inputs,
+                                    &jobs[j].command, &ctx->cmdlog))
       {
         log_msg(INFO, "Skipping compilation of: %s",
                 tmk_str_cstr(&jobs[j].file->c_path));
@@ -334,6 +326,8 @@ int generate_object_files(build_context* ctx, target* target)
 
         available_processes--;
       }
+
+      tmk_str_array_free(&inputs);
     }
 
     if (available_processes == n_processes)
@@ -453,33 +447,17 @@ int link_object_files(build_context* ctx, target* target)
 
   tmk_str_append_format(&command, " -o %s", tmk_str_cstr(&target->name));
 
+  tmk_str_array inputs = {0};
   for (size_t i = 0; i < target->source_files_count; ++i)
   {
     tmk_str_append_format(&command, " %s",
                           tmk_str_cstr(&target->source_files[i].o_path));
+    tmk_str_array_push(&inputs, tmk_str_clone(&target->source_files[i].o_path));
   }
 
-  struct stat s;
-  bool target_exists = stat(tmk_str_cstr(&target->name), &s) == 0;
   int rc = 0;
 
-  bool should_relink = false;
-  for (size_t i = 0; target_exists && i < target->source_files_count; ++i)
-  {
-    struct stat file_stat;
-    if (stat(tmk_str_cstr(&target->source_files[i].o_path), &file_stat) != 0 ||
-        is_newer(&file_stat, &s))
-    {
-      should_relink = true;
-      break;
-    }
-  }
-
-  const tmk_str* recorded = tmk_cmdlog_find(&ctx->cmdlog, &target->name);
-  bool is_command_recorded = recorded != NULL &&
-                             tmk_str_equal(&command, recorded);
-
-  if (!target_exists || should_relink || !is_command_recorded)
+  if (!up_to_date(&target->name, &inputs, &command, &ctx->cmdlog))
   {
     log_msg(INFO, "Linking...");
     log_msg(DBG, "Link command: %s", tmk_str_cstr(&command));
@@ -493,7 +471,7 @@ int link_object_files(build_context* ctx, target* target)
   {
     log_msg(INFO, "Nothing to link. Skipping...");
   }
-
+  tmk_str_array_free(&inputs);
   tmk_str_free(&command);
 
   return rc;
