@@ -23,7 +23,7 @@ int main(int argc, char* argv[])
   }
 
   build_context ctx = {0};
-  ctx.n_processes = args.n_processes;
+  ctx.n_processes = args.n_processes != 0 ? args.n_processes : 1;
   tmk_str cmdlog_path = tmk_str_from_cstr(".tinymake_log");
   tmk_cmdlog_load(&ctx.cmdlog, &cmdlog_path);
 
