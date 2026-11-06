@@ -2,7 +2,7 @@
 #define TMK_PATH_H
 
 #include "tmk_str.h"
-#include "tmk_types.h"
+#include "tmk_config.h"
 
 tmk_str tmk_path_without_ext(const tmk_str* p);
 tmk_str tmk_path_get_dir(const tmk_str* p);

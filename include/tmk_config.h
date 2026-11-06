@@ -1,18 +1,13 @@
-#ifndef TMK_TYPES_H
-#define TMK_TYPES_H
+#ifndef TMK_CONFIG_H
+#define TMK_CONFIG_H
 
-#include <stdbool.h>
-#include <stdlib.h>
+#include <stddef.h>
 
-#include "tmk_cmdlog.h"
 #include "tmk_constants.h"
 #include "tmk_str.h"
 #include "tmk_str_array.h"
 
-typedef struct
-{
-  size_t n_processes;
-} command_line_arguments;
+// What the build file describes. The parser fills it, the engine only reads it
 
 typedef struct
 {
@@ -37,14 +32,14 @@ typedef struct
 
 typedef struct
 {
-  tmk_cmdlog cmdlog;
   tmk_str compiler;
   tmk_str_array compile_flags;
   tmk_str_array link_flags;
   tmk_str_array includes_dir;
   target targets[MAX_TARGETS];
   size_t targets_count;
-  int n_processes;
-} build_context;
+} build_config;
+
+void free_build_config(build_config* config);
 
 #endif

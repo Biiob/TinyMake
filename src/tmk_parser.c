@@ -111,7 +111,7 @@ static int parse_list(const parse_state* st, tmk_str_array* tokens,
 }
 
 // "binary name: sources..."
-static int parse_binary(build_context* ctx, const parse_state* st,
+static int parse_binary(build_config* config, const parse_state* st,
                         tmk_str_array* tokens)
 {
   tmk_str* name = tokens->len >= 2 ? &tokens->items[1] : NULL;
@@ -134,7 +134,7 @@ static int parse_binary(build_context* ctx, const parse_state* st,
     return parse_error(st, "binary '%s' has too many source files (max %d)",
                        tmk_str_cstr(name), MAX_C_FILES);
   }
-  if (ctx->targets_count == MAX_TARGETS)
+  if (config->targets_count == MAX_TARGETS)
   {
     return parse_error(st, "too many targets (max %d)", MAX_TARGETS);
   }
@@ -142,16 +142,16 @@ static int parse_binary(build_context* ctx, const parse_state* st,
   tmk_str target_name = tmk_str_from_cstr(BIN_DIR);
   tmk_str_append_format(&target_name, "/%s", tmk_str_cstr(name));
 
-  for (size_t i = 0; i < ctx->targets_count; ++i)
+  for (size_t i = 0; i < config->targets_count; ++i)
   {
-    if (tmk_str_equal(&ctx->targets[i].name, &target_name))
+    if (tmk_str_equal(&config->targets[i].name, &target_name))
     {
       tmk_str_free(&target_name);
       return parse_error(st, "binary '%s' already defined", tmk_str_cstr(name));
     }
   }
 
-  target* current_target = &ctx->targets[ctx->targets_count++];
+  target* current_target = &config->targets[config->targets_count++];
   current_target->type = BINARY;
   current_target->name = target_name;
   current_target->source_files_count = 0;
@@ -168,31 +168,7 @@ static int parse_binary(build_context* ctx, const parse_state* st,
   return 0;
 }
 
-static void free_target(target* target)
-{
-  tmk_str_free(&target->name);
-  for (size_t i = 0; i < target->source_files_count; ++i)
-  {
-    tmk_str_free(&target->source_files[i].c_path);
-    tmk_str_free(&target->source_files[i].o_path);
-    tmk_str_free(&target->source_files[i].d_path);
-  }
-}
-
-void free_build_context(build_context* ctx)
-{
-  tmk_str_free(&ctx->compiler);
-  tmk_str_array_free(&ctx->compile_flags);
-  tmk_str_array_free(&ctx->link_flags);
-  tmk_str_array_free(&ctx->includes_dir);
-
-  for (size_t i = 0; i < ctx->targets_count; ++i)
-  {
-    free_target(&ctx->targets[i]);
-  }
-}
-
-int parse_build_file(build_context* ctx, const tmk_str* path)
+int parse_build_file(build_config* config, const tmk_str* path)
 {
   FILE* f = fopen(tmk_str_cstr(path), "r");
   if (f == NULL)
@@ -221,23 +197,23 @@ int parse_build_file(build_context* ctx, const tmk_str* path)
 
     if (tmk_str_equal_cstr(key, "cc"))
     {
-      rc = parse_value(&st, &tokens, &ctx->compiler, &st.cc_line);
+      rc = parse_value(&st, &tokens, &config->compiler, &st.cc_line);
     }
     else if (tmk_str_equal_cstr(key, "cflags"))
     {
-      rc = parse_list(&st, &tokens, &ctx->compile_flags, &st.cflags_line);
+      rc = parse_list(&st, &tokens, &config->compile_flags, &st.cflags_line);
     }
     else if (tmk_str_equal_cstr(key, "ldflags"))
     {
-      rc = parse_list(&st, &tokens, &ctx->link_flags, &st.ldflags_line);
+      rc = parse_list(&st, &tokens, &config->link_flags, &st.ldflags_line);
     }
     else if (tmk_str_equal_cstr(key, "includes"))
     {
-      rc = parse_list(&st, &tokens, &ctx->includes_dir, &st.includes_line);
+      rc = parse_list(&st, &tokens, &config->includes_dir, &st.includes_line);
     }
     else if (tmk_str_equal_cstr(key, "binary"))
     {
-      rc = parse_binary(ctx, &st, &tokens);
+      rc = parse_binary(config, &st, &tokens);
     }
     else
     {

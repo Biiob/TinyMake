@@ -1,5 +1,6 @@
 #include "tmk_runner.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <spawn.h>
@@ -73,10 +74,32 @@ static tmk_runner_child_result wait_child(pid_t pid, int* detail)
   return CHILD_WAIT_ERROR;
 }
 
-tmk_runner_result tmk_runner_run(const tmk_runner_command* commands,
-                                 tmk_cmdlog* cmdlog, size_t n_commands,
-                                 int parallel_proc)
+static void report_statuses(const tmk_runner_job* jobs, size_t n_jobs,
+                            tmk_runner_command* commands)
 {
+  for (size_t i = 0; i < n_jobs; ++i)
+  {
+    switch (jobs[i].status)
+    {
+      case PENDING:
+        commands[i].status = TMK_RUNNER_STATUS_NOT_RUN;
+        break;
+      case DONE:
+        commands[i].status = TMK_RUNNER_STATUS_SUCCEEDED;
+        break;
+      case RUNNING:
+      case FAILED:
+        commands[i].status = TMK_RUNNER_STATUS_FAILED;
+        break;
+    }
+  }
+}
+
+tmk_runner_result tmk_runner_run(tmk_runner_command* commands,
+                                 size_t n_commands, size_t parallel_proc)
+{
+  assert(parallel_proc > 0);
+
   if (n_commands == 0)
   {
     return TMK_RUNNER_RESULT_SUCCESS;
@@ -95,7 +118,7 @@ tmk_runner_result tmk_runner_run(const tmk_runner_command* commands,
     pfds[i].events = 0;
   }
 
-  int avail_proc = parallel_proc;
+  size_t avail_proc = parallel_proc;
   bool has_failed_job = false;
   for (;;)
   {
@@ -255,8 +278,6 @@ tmk_runner_result tmk_runner_run(const tmk_runner_command* commands,
               jobs[i].status = DONE;
               log_msg(INFO, "%s\n%s", tmk_str_cstr(&jobs[i].command.display),
                       tmk_str_cstr(&jobs[i].buffer));
-              tmk_cmdlog_record(cmdlog, &jobs[i].command.output,
-                                &jobs[i].command.display);
               break;
 
             case CHILD_EXIT_FAILURE:
@@ -293,6 +314,7 @@ tmk_runner_result tmk_runner_run(const tmk_runner_command* commands,
     }
   }
 
+  report_statuses(jobs, n_commands, commands);
   free(jobs);
   free(pfds);
 
@@ -315,6 +337,7 @@ exit_error:
     tmk_str_free(&jobs[i].buffer);
   }
 
+  report_statuses(jobs, n_commands, commands);
   free(jobs);
   free(pfds);
 
@@ -342,7 +365,6 @@ void tmk_runner_command_array_free(tmk_runner_command_array* arr)
   {
     free(arr->items[i].argv);
     tmk_str_free(&arr->items[i].display);
-    tmk_str_free(&arr->items[i].output);
     tmk_str_free(&arr->items[i].name);
   }
   free(arr->items);
