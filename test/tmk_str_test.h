@@ -28,6 +28,7 @@ void test_equal(void);
 void test_equal_cstr(void);
 void test_equal_nocase(void);
 void test_find_char(void);
+void test_find_next_char(void);
 void test_rfind_char(void);
 void test_read_line(void);
 

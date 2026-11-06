@@ -90,9 +90,9 @@ bool tmk_str_equal(const tmk_str* str1, const tmk_str* str2);
 bool tmk_str_equal_cstr(const tmk_str* str1, const char* str2);
 bool tmk_str_equal_nocase(const tmk_str* str1, const tmk_str* str2);
 
-
 // Find functions return the index of c, or len if not found
 size_t tmk_str_find_char(const tmk_str* str, char c);
+size_t tmk_str_find_next_char(const tmk_str* str, size_t offset, char c);
 size_t tmk_str_rfind_char(const tmk_str* str, char c);
 
 // Replaces the content of dst with the next line of f, '\n' included

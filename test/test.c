@@ -47,6 +47,7 @@ int main(void)
   RUN(test_equal_cstr);
   RUN(test_equal_nocase);
   RUN(test_find_char);
+  RUN(test_find_next_char);
   RUN(test_rfind_char);
   RUN(test_read_line);
 

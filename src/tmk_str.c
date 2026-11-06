@@ -316,7 +316,12 @@ bool tmk_str_equal_nocase(const tmk_str* str1, const tmk_str* str2)
 
 size_t tmk_str_find_char(const tmk_str* str, char c)
 {
-  const char* found = memchr(str->str, c, str->len);
+  return tmk_str_find_next_char(str, 0, c);
+}
+
+size_t tmk_str_find_next_char(const tmk_str* str, size_t offset, char c)
+{
+  const char* found = memchr(str->str + offset, c, str->len - offset);
 
   return found != NULL ? (size_t)(found - str->str) : str->len;
 }

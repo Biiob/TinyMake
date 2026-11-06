@@ -415,22 +415,25 @@ void test_equal_nocase(void)
 void test_find_char(void)
 {
   tmk_str s = tmk_str_from_cstr("hello world");
-  size_t pos = tmk_str_find_char(&s, 'l');
-  assert(pos == 2);
-  size_t pos2 = tmk_str_find_char(&s, 'z');
-  assert(pos2 == s.len);
+  assert(tmk_str_find_char(&s, 'l') == 2);
+  assert(tmk_str_find_char(&s, 'z') == s.len);
+  tmk_str_free(&s);
+}
+
+void test_find_next_char(void)
+{
+  tmk_str s = tmk_str_from_cstr("hello world");
+  assert(tmk_str_find_next_char(&s, 5, 'l') == 9);
+  assert(tmk_str_find_next_char(&s, 2, 'h') == s.len);
   tmk_str_free(&s);
 }
 
 void test_rfind_char(void)
 {
   tmk_str s = tmk_str_from_cstr("hello world");
-  size_t pos = tmk_str_rfind_char(&s, 'l');
-  assert(pos == 9);
-  size_t pos2 = tmk_str_rfind_char(&s, 'z');
-  assert(pos2 == s.len);
-  size_t pos3 = tmk_str_rfind_char(&s, 'h');
-  assert(pos3 == 0);
+  assert(tmk_str_rfind_char(&s, 'l') == 9);
+  assert(tmk_str_rfind_char(&s, 'z') == s.len);
+  assert(tmk_str_rfind_char(&s, 'h') == 0);
   tmk_str_free(&s);
 
   tmk_str e = tmk_str_create();
