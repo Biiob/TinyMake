@@ -11,9 +11,10 @@
 // Passed as a length to mean "until the end of the string"
 #define TMK_STR_NPOS SIZE_MAX
 
-// Owning, growable string. str is always null-terminated and capacity counts
-// the terminator. A plain struct copy shares the buffer: only one of the copies
-// may be freed.
+// Owning, growable string. capacity counts the null terminator. A zeroed
+// struct is a valid empty string, without a buffer: str is then NULL, and
+// tmk_str_cstr returns "". Otherwise str is always null-terminated.
+// A plain struct copy shares the buffer: only one of the copies may be freed.
 // Functions returning tmk_str* return dst/str, to allow chaining.
 typedef struct
 {
@@ -40,25 +41,23 @@ tmk_str tmk_str_clone(const tmk_str* other);
 // Copies n bytes of buf, which does not need to be null-terminated
 tmk_str tmk_str_from_buf(const char* buf, size_t n);
 
-tmk_str tmk_str_from_cstr(const char* other);
+tmk_str tmk_str_from_cstr(const char* cstr);
 
 // Copies at most n characters from pos, or until the end with TMK_STR_NPOS
 // Returns an empty string if pos is past the end
 tmk_str tmk_str_substr(const tmk_str* str, size_t pos, size_t n);
 
 // Takes ownership of a malloc'd null-terminated string, without copying
-tmk_str tmk_str_take(char* str);
+tmk_str tmk_str_take(char* cstr);
 
 // Gives up ownership of the buffer, which the caller must free()
 // str is left zeroed, like after tmk_str_free
 char* tmk_str_release(tmk_str* str);
 
-// Does nothing if i >= len or c is '\0'
-void tmk_str_set(tmk_str* str, size_t i, char c);
-
 const char* tmk_str_cstr(const tmk_str* str);
 
-// Writable buffer of capacity bytes. Call tmk_str_set_len after writing to it
+// Writable buffer of capacity bytes, NULL for a zeroed string
+// Call tmk_str_set_len after writing to it
 char* tmk_str_data(tmk_str* str);
 
 // Sets len and the terminator after writing through tmk_str_data
@@ -91,6 +90,7 @@ bool tmk_str_equal_cstr(const tmk_str* str1, const char* str2);
 bool tmk_str_equal_nocase(const tmk_str* str1, const tmk_str* str2);
 
 // Find functions return the index of c, or len if not found
+// offset must not be past len
 size_t tmk_str_find_char(const tmk_str* str, char c);
 size_t tmk_str_find_next_char(const tmk_str* str, size_t offset, char c);
 size_t tmk_str_rfind_char(const tmk_str* str, char c);

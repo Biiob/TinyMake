@@ -2,11 +2,13 @@
 #define TMK_PATH_H
 
 #include "tmk_str.h"
-#include "tmk_config.h"
 
-tmk_str tmk_path_without_ext(const tmk_str* p);
-tmk_str tmk_path_get_dir(const tmk_str* p);
+// Both return a new string
 
-compile_file create_compile_file(tmk_str* c_path);
+// "src/a.c" gives "src/a". A dot in a directory name is not an extension
+tmk_str tmk_path_without_ext(const tmk_str* path);
+
+// "src/a.c" gives "src", and "a.c" gives ""
+tmk_str tmk_path_get_dir(const tmk_str* path);
 
 #endif

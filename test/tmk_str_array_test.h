@@ -5,6 +5,6 @@ void test_str_array_zeroed(void);
 void test_str_array_push(void);
 void test_str_array_push_grows(void);
 void test_str_array_take(void);
-void test_tokenize(void);
+void test_str_tokenize(void);
 
 #endif

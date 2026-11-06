@@ -2,33 +2,28 @@
 
 #include <stdio.h>
 
-ssize_t parse_depfile(tmk_str_array* deps, const tmk_str* path)
+bool tmk_depfile_parse(tmk_str_array* deps, const tmk_str* path)
 {
   *deps = (tmk_str_array){0};
 
   FILE* f = fopen(tmk_str_cstr(path), "rb");
   if (f == NULL)
   {
-    return -1;
+    return false;
   }
 
   tmk_str line = tmk_str_create();
-  bool is_first_line = true;
+  bool is_target = true;
   while (tmk_str_read_line(&line, f) != -1)
   {
     tmk_str_trim(&line);
     tmk_str_array tokens = tmk_str_tokenize(&line, ' ');
     for (size_t i = 0; i < tokens.len; ++i)
     {
-      // First token of the first line is the target
-      if (is_first_line && i == 0)
+      // The first token is the target, and a lone '\' continues the line
+      if (is_target || tokens.items[i].str[0] == '\\')
       {
-        is_first_line = false;
-        continue;
-      }
-      // gcc's line continuation character
-      else if (tokens.items[i].str[0] == '\\')
-      {
+        is_target = false;
         continue;
       }
 
@@ -39,5 +34,5 @@ ssize_t parse_depfile(tmk_str_array* deps, const tmk_str* path)
   tmk_str_free(&line);
   fclose(f);
 
-  return (ssize_t)deps->len;
+  return true;
 }

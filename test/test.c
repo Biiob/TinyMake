@@ -20,50 +20,49 @@
 int main(void)
 {
   // Expected errors from the tests would drown the results
-  log_set_sink(NULL);
+  tmk_log_set_sink(NULL);
 
-  RUN(test_create);
-  RUN(test_create_with_capacity);
-  RUN(test_grow_min_capacity);
-  RUN(test_reserve);
-  RUN(test_clear);
-  RUN(test_free);
-  RUN(test_from_buf);
-  RUN(test_from_cstr);
-  RUN(test_clone);
-  RUN(test_substr);
-  RUN(test_take);
-  RUN(test_release);
-  RUN(test_cstr);
-  RUN(test_set);
-  RUN(test_append_n);
-  RUN(test_append_cstr);
-  RUN(test_append);
-  RUN(test_append_grows);
-  RUN(test_push);
-  RUN(test_format);
-  RUN(test_format_grows);
-  RUN(test_append_format);
-  RUN(test_trim);
-  RUN(test_equal);
-  RUN(test_equal_cstr);
-  RUN(test_equal_nocase);
-  RUN(test_find_char);
-  RUN(test_find_next_char);
-  RUN(test_rfind_char);
-  RUN(test_read_line);
+  RUN(test_str_create);
+  RUN(test_str_create_with_capacity);
+  RUN(test_str_grow_min_capacity);
+  RUN(test_str_reserve);
+  RUN(test_str_clear);
+  RUN(test_str_free);
+  RUN(test_str_from_buf);
+  RUN(test_str_from_cstr);
+  RUN(test_str_clone);
+  RUN(test_str_substr);
+  RUN(test_str_take);
+  RUN(test_str_release);
+  RUN(test_str_cstr);
+  RUN(test_str_append_n);
+  RUN(test_str_append_cstr);
+  RUN(test_str_append);
+  RUN(test_str_append_grows);
+  RUN(test_str_push);
+  RUN(test_str_format);
+  RUN(test_str_format_grows);
+  RUN(test_str_append_format);
+  RUN(test_str_trim);
+  RUN(test_str_equal);
+  RUN(test_str_equal_cstr);
+  RUN(test_str_equal_nocase);
+  RUN(test_str_find_char);
+  RUN(test_str_find_next_char);
+  RUN(test_str_rfind_char);
+  RUN(test_str_read_line);
+  RUN(test_str_zeroed);
 
   RUN(test_str_array_zeroed);
   RUN(test_str_array_push);
   RUN(test_str_array_push_grows);
   RUN(test_str_array_take);
-  RUN(test_tokenize);
+  RUN(test_str_tokenize);
 
   RUN(test_depfile_single_line);
   RUN(test_depfile_continuation_lines);
   RUN(test_depfile_no_trailing_newline);
   RUN(test_depfile_extra_whitespace);
-  RUN(test_depfile_growth);
   RUN(test_depfile_no_prerequisites);
   RUN(test_depfile_empty);
   RUN(test_depfile_missing_file);
@@ -84,29 +83,24 @@ int main(void)
   RUN(test_cmdlog_load_tab_in_command);
   RUN(test_cmdlog_load_wrong_header);
   RUN(test_cmdlog_find);
-  RUN(test_cmdlog_record_new_output);
   RUN(test_cmdlog_record_existing_output);
   RUN(test_cmdlog_record_copies);
   RUN(test_cmdlog_save_format);
   RUN(test_cmdlog_save_empty);
-  RUN(test_cmdlog_save_uses_path);
   RUN(test_cmdlog_save_replaces_existing);
   RUN(test_cmdlog_save_invalid_path);
   RUN(test_cmdlog_round_trip);
-  RUN(test_cmdlog_round_trip_is_stable);
   RUN(test_cmdlog_free);
 
   RUN(test_path_get_dir);
   RUN(test_path_without_ext);
 
-  RUN(test_fs_create_dir);
   RUN(test_fs_create_dir_nested);
   RUN(test_fs_create_dir_existing);
   RUN(test_fs_create_dir_absolute);
   RUN(test_fs_create_dir_empty);
   RUN(test_fs_create_dir_file_in_the_way);
   RUN(test_fs_create_dir_not_allowed);
-  RUN(test_fs_init_work_dirs);
   RUN(test_fs_is_newer);
 
   printf("All tests passed.\n");

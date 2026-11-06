@@ -7,39 +7,44 @@
 #include "tmk_str.h"
 #include "tmk_str_array.h"
 
-// What the build file describes. The parser fills it, the engine only reads it
+// What the build file describes: filled by the parser, then only read
 
 typedef struct
 {
   tmk_str c_path;
   tmk_str o_path;
   tmk_str d_path;
-} compile_file;
+} tmk_source;
 
 typedef enum
 {
-  BINARY,
-  LIBRARY
-} target_type;
+  TMK_TARGET_BINARY,
+  TMK_TARGET_LIBRARY
+} tmk_target_type;
 
 typedef struct
 {
-  target_type type;
-  tmk_str name;
-  compile_file source_files[MAX_C_FILES];
-  size_t source_files_count;
-} target;
+  tmk_target_type type;
+  // Where the target is built, e.g. "bin/app"
+  tmk_str path;
+  tmk_source sources[TMK_MAX_SOURCES];
+  size_t n_sources;
+} tmk_target;
 
 typedef struct
 {
   tmk_str compiler;
   tmk_str_array compile_flags;
   tmk_str_array link_flags;
-  tmk_str_array includes_dir;
-  target targets[MAX_TARGETS];
-  size_t targets_count;
-} build_config;
+  tmk_str_array include_dirs;
+  tmk_target targets[TMK_MAX_TARGETS];
+  size_t n_targets;
+} tmk_config;
 
-void free_build_config(build_config* config);
+// Takes ownership of c_path. The object and depfile mirror its path under
+// TMK_OBJ_DIR, so that sources with the same name do not collide
+tmk_source tmk_source_create(tmk_str c_path);
+
+void tmk_config_free(tmk_config* config);
 
 #endif

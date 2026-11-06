@@ -13,7 +13,7 @@ void tmk_str_array_push(tmk_str_array* arr, tmk_str str)
   {
     size_t capacity = arr->capacity == 0 ? TMK_STR_ARRAY_MIN_CAP
                                          : arr->capacity * 2;
-    arr->items = tmk_xrealloc(arr->items, capacity * sizeof(tmk_str));
+    arr->items = tmk_xrealloc(arr->items, capacity * sizeof(*arr->items));
     arr->capacity = capacity;
   }
 

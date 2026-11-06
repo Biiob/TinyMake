@@ -1,6 +1,7 @@
 #ifndef TMK_ENGINE_H
 #define TMK_ENGINE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "tmk_cmdlog.h"
@@ -9,15 +10,19 @@
 // What a build needs besides its configuration, and what it changes
 typedef struct
 {
-  // Commands that succeeded are recorded here, even when the build fails
+  // Gets the commands that succeeded, even when the build fails
   tmk_cmdlog cmdlog;
-  // Maximum number of commands run at the same time, never 0
-  size_t n_processes;
-} build_state;
+  // At least 1
+  size_t max_jobs;
+} tmk_engine_state;
 
-int generate_object_files(const build_config* config, build_state* state,
-                          const target* target);
-int link_object_files(const build_config* config, build_state* state,
-                      const target* target);
+// Compiles the sources of target that are not up to date
+// Returns false if one of them failed
+bool tmk_engine_compile(const tmk_config* config, tmk_engine_state* state,
+                        const tmk_target* target);
+
+// Links target if it is not up to date. Returns false if linking failed
+bool tmk_engine_link(const tmk_config* config, tmk_engine_state* state,
+                     const tmk_target* target);
 
 #endif

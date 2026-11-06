@@ -4,9 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "tmk_str_array.h"
 #include "tmk_str_test.h"
 
-/* Invariants every valid tmk_str must satisfy. */
+// Invariants every valid tmk_str must satisfy
 static void check_invariants(const tmk_str* s)
 {
   assert(s->str != NULL);
@@ -14,7 +15,7 @@ static void check_invariants(const tmk_str* s)
   assert(strlen(s->str) == s->len);
 }
 
-/* Heap copy for tmk_str_take */
+// Heap copy for tmk_str_take
 static char* heap_copy(const char* s)
 {
   size_t n = strlen(s) + 1;
@@ -24,7 +25,7 @@ static char* heap_copy(const char* s)
   return p;
 }
 
-void test_create(void)
+void test_str_create(void)
 {
   tmk_str s = tmk_str_create();
   check_invariants(&s);
@@ -34,9 +35,9 @@ void test_create(void)
   tmk_str_free(&s);
 }
 
-void test_grow_min_capacity(void)
+void test_str_grow_min_capacity(void)
 {
-  /* A tiny string grows straight to the minimum capacity, not 2 -> 4 -> 8. */
+  // A tiny string grows straight to the minimum capacity, not 2 -> 4 -> 8
   tmk_str s = tmk_str_from_cstr("a");
   tmk_str_push(&s, 'b');
   check_invariants(&s);
@@ -45,7 +46,7 @@ void test_grow_min_capacity(void)
   tmk_str_free(&s);
 }
 
-void test_create_with_capacity(void)
+void test_str_create_with_capacity(void)
 {
   tmk_str s = tmk_str_create_with_capacity(10);
   check_invariants(&s);
@@ -53,22 +54,22 @@ void test_create_with_capacity(void)
   assert(s.capacity >= 10);
   tmk_str_free(&s);
 
-  /* Edge case: zero capacity must still yield a valid empty string. */
+  // Edge case: zero capacity must still yield a valid empty string
   tmk_str z = tmk_str_create_with_capacity(0);
   check_invariants(&z);
   assert(z.len == 0);
   tmk_str_free(&z);
 }
 
-void test_reserve(void)
+void test_str_reserve(void)
 {
   tmk_str s = tmk_str_from_cstr("hello");
   tmk_str_reserve(&s, 1024);
   check_invariants(&s);
   assert(s.capacity >= 1024);
-  assert(strcmp(s.str, "hello") == 0); /* content preserved */
+  assert(strcmp(s.str, "hello") == 0);  // content preserved
 
-  /* Reserving less than current capacity must not shrink or corrupt. */
+  // Reserving less than current capacity must not shrink or corrupt
   size_t cap = s.capacity;
   tmk_str_reserve(&s, 1);
   check_invariants(&s);
@@ -77,7 +78,7 @@ void test_reserve(void)
   tmk_str_free(&s);
 }
 
-void test_clear(void)
+void test_str_clear(void)
 {
   tmk_str s = tmk_str_from_cstr("hello");
   tmk_str_clear(&s);
@@ -87,7 +88,7 @@ void test_clear(void)
   tmk_str_free(&s);
 }
 
-void test_free(void)
+void test_str_free(void)
 {
   tmk_str s = tmk_str_from_cstr("abc");
   tmk_str_free(&s);
@@ -97,7 +98,7 @@ void test_free(void)
   tmk_str_free(&s);
 }
 
-void test_from_buf(void)
+void test_str_from_buf(void)
 {
   const char* src = "hello world";
   tmk_str s = tmk_str_from_buf(src, 8);
@@ -107,14 +108,14 @@ void test_from_buf(void)
   tmk_str_free(&s);
 }
 
-void test_from_cstr(void)
+void test_str_from_cstr(void)
 {
   const char* src = "hello world";
   tmk_str s = tmk_str_from_cstr(src);
   check_invariants(&s);
   assert(s.len == strlen(src));
   assert(strcmp(s.str, src) == 0);
-  assert(s.str != src); /* actually a copy */
+  assert(s.str != src);  // actually a copy
   tmk_str_free(&s);
 
   tmk_str e = tmk_str_from_cstr("");
@@ -123,16 +124,16 @@ void test_from_cstr(void)
   tmk_str_free(&e);
 }
 
-void test_clone(void)
+void test_str_clone(void)
 {
   tmk_str a = tmk_str_from_cstr("original");
   tmk_str b = tmk_str_clone(&a);
   check_invariants(&b);
   assert(b.len == a.len);
   assert(strcmp(a.str, b.str) == 0);
-  assert(a.str != b.str); /* deep copy */
+  assert(a.str != b.str);  // deep copy
 
-  /* Mutating the copy must not affect the source. */
+  // Mutating the copy must not affect the source
   b.str[0] = 'X';
   assert(a.str[0] == 'o');
 
@@ -140,7 +141,7 @@ void test_clone(void)
   tmk_str_free(&b);
 }
 
-void test_substr(void)
+void test_str_substr(void)
 {
   tmk_str a = tmk_str_from_cstr("hello world");
   tmk_str b = tmk_str_substr(&a, 0, 5);
@@ -174,17 +175,17 @@ void test_substr(void)
   tmk_str_free(&f);
 }
 
-void test_take(void)
+void test_str_take(void)
 {
   char* raw = heap_copy("owned");
   tmk_str s = tmk_str_take(raw);
   check_invariants(&s);
-  assert(s.str == raw); /* took ownership, no copy */
+  assert(s.str == raw);  // took ownership, no copy
   assert(s.len == 5);
   tmk_str_free(&s);
 }
 
-void test_release(void)
+void test_str_release(void)
 {
   tmk_str s = tmk_str_from_cstr("owned");
   char* raw = tmk_str_release(&s);
@@ -196,7 +197,7 @@ void test_release(void)
   free(raw);
 }
 
-void test_cstr(void)
+void test_str_cstr(void)
 {
   tmk_str s = tmk_str_from_cstr("data");
   const char* p = tmk_str_cstr(&s);
@@ -205,21 +206,7 @@ void test_cstr(void)
   tmk_str_free(&s);
 }
 
-void test_set(void)
-{
-  tmk_str s = tmk_str_from_cstr("abc");
-
-  tmk_str_set(&s, 1, 'X');
-  assert(strcmp(s.str, "aXc") == 0);
-
-  /* Bounds checking: trying to write beyond the length does nothing */
-  tmk_str_set(&s, 4, 'Z');
-  assert(strcmp(s.str, "aXc") == 0);
-
-  tmk_str_free(&s);
-}
-
-void test_append_n(void)
+void test_str_append_n(void)
 {
   tmk_str s = tmk_str_from_cstr("foo");
   tmk_str* r = tmk_str_append_n(&s, "barxzy", 3);
@@ -230,7 +217,7 @@ void test_append_n(void)
   tmk_str_free(&s);
 }
 
-void test_append_cstr(void)
+void test_str_append_cstr(void)
 {
   tmk_str s = tmk_str_from_cstr("foo");
   tmk_str* r = tmk_str_append_cstr(&s, "bar");
@@ -239,13 +226,13 @@ void test_append_cstr(void)
   assert(strcmp(s.str, "foobar") == 0);
   assert(s.len == 6);
 
-  /* Appending empty is a no-op. */
+  // Appending empty is a no-op
   tmk_str_append_cstr(&s, "");
   assert(strcmp(s.str, "foobar") == 0);
   tmk_str_free(&s);
 }
 
-void test_append(void)
+void test_str_append(void)
 {
   tmk_str dst = tmk_str_create();
   tmk_str src = tmk_str_from_cstr("abc");
@@ -253,9 +240,9 @@ void test_append(void)
   assert(r == &dst);
   check_invariants(&dst);
   assert(strcmp(dst.str, "abc") == 0);
-  assert(strcmp(src.str, "abc") == 0); /* source untouched */
+  assert(strcmp(src.str, "abc") == 0);  // source untouched
 
-  /* Self-append */
+  // Self-append
   tmk_str_append(&dst, &dst);
   check_invariants(&dst);
   assert(strcmp(dst.str, "abcabc") == 0);
@@ -280,20 +267,24 @@ void test_append(void)
   tmk_str_free(&long_str);
 }
 
-void test_append_grows(void)
+void test_str_append_grows(void)
 {
   tmk_str s = tmk_str_create_with_capacity(4);
   for (int i = 0; i < 1000; ++i)
+  {
     tmk_str_append_cstr(&s, "x");
+  }
   check_invariants(&s);
   assert(s.len == 1000);
   assert(s.capacity < 2 * (s.len + 1));
   for (size_t i = 0; i < s.len; ++i)
+  {
     assert(s.str[i] == 'x');
+  }
   tmk_str_free(&s);
 }
 
-void test_append_format(void)
+void test_str_append_format(void)
 {
   tmk_str s = tmk_str_from_cstr("hello");
   char u[] = "xxx";
@@ -304,7 +295,7 @@ void test_append_format(void)
   tmk_str_free(&s);
 }
 
-void test_push(void)
+void test_str_push(void)
 {
   tmk_str s = tmk_str_from_cstr("foo");
   tmk_str_push(&s, 'b');
@@ -319,7 +310,7 @@ void test_push(void)
   tmk_str_free(&s);
 }
 
-void test_format(void)
+void test_str_format(void)
 {
   tmk_str s = tmk_str_create();
   tmk_str* r = tmk_str_format(&s, "%d-%s-%c", 42, "abc", 'z');
@@ -332,9 +323,9 @@ void test_format(void)
   tmk_str_free(&s);
 }
 
-void test_format_grows(void)
+void test_str_format_grows(void)
 {
-  /* Output longer than the initial capacity: must resize, not truncate. */
+  // Output longer than the initial capacity: must resize, not truncate
   char big[2000];
   memset(big, 'a', sizeof big - 1);
   big[sizeof big - 1] = '\0';
@@ -358,7 +349,7 @@ static void check_trim(const char* in, const char* expected)
   tmk_str_free(&s);
 }
 
-void test_trim(void)
+void test_str_trim(void)
 {
   check_trim("  hello  ", "hello");
   check_trim("hello", "hello");
@@ -371,7 +362,7 @@ void test_trim(void)
   check_trim(" x ", "x");
 }
 
-void test_equal(void)
+void test_str_equal(void)
 {
   tmk_str s1 = tmk_str_from_cstr("hello");
   tmk_str s2 = tmk_str_from_cstr("hallo");
@@ -387,7 +378,7 @@ void test_equal(void)
   tmk_str_free(&s2);
 }
 
-void test_equal_cstr(void)
+void test_str_equal_cstr(void)
 {
   tmk_str s1 = tmk_str_from_cstr("hello");
   char s2[] = "hallo";
@@ -402,7 +393,7 @@ void test_equal_cstr(void)
   tmk_str_free(&s1);
 }
 
-void test_equal_nocase(void)
+void test_str_equal_nocase(void)
 {
   tmk_str s1 = tmk_str_from_cstr("hello");
   tmk_str s2 = tmk_str_from_cstr("HELLO");
@@ -412,7 +403,7 @@ void test_equal_nocase(void)
   tmk_str_free(&s2);
 }
 
-void test_find_char(void)
+void test_str_find_char(void)
 {
   tmk_str s = tmk_str_from_cstr("hello world");
   assert(tmk_str_find_char(&s, 'l') == 2);
@@ -420,7 +411,7 @@ void test_find_char(void)
   tmk_str_free(&s);
 }
 
-void test_find_next_char(void)
+void test_str_find_next_char(void)
 {
   tmk_str s = tmk_str_from_cstr("hello world");
   assert(tmk_str_find_next_char(&s, 5, 'l') == 9);
@@ -428,7 +419,7 @@ void test_find_next_char(void)
   tmk_str_free(&s);
 }
 
-void test_rfind_char(void)
+void test_str_rfind_char(void)
 {
   tmk_str s = tmk_str_from_cstr("hello world");
   assert(tmk_str_rfind_char(&s, 'l') == 9);
@@ -441,7 +432,7 @@ void test_rfind_char(void)
   tmk_str_free(&e);
 }
 
-void test_read_line(void)
+void test_str_read_line(void)
 {
   FILE* f = tmpfile();
   assert(f != NULL);
@@ -453,7 +444,7 @@ void test_read_line(void)
   fprintf(f, "first\n\n%s\nlast without newline", long_line);
   rewind(f);
 
-  /* Small capacity so that the long line forces getline to reallocate. */
+  // Small capacity so that the long line forces getline to reallocate
   tmk_str s = tmk_str_create_with_capacity(4);
 
   assert(tmk_str_read_line(&s, f) == 6);
@@ -478,4 +469,76 @@ void test_read_line(void)
 
   tmk_str_free(&s);
   fclose(f);
+}
+
+void test_str_zeroed(void)
+{
+  // A zeroed string is a valid empty string for every function
+  tmk_str z = {0};
+  assert(strcmp(tmk_str_cstr(&z), "") == 0);
+  assert(tmk_str_equal_cstr(&z, ""));
+  assert(tmk_str_find_char(&z, 'a') == 0);
+  assert(tmk_str_find_next_char(&z, 0, 'a') == 0);
+  assert(tmk_str_rfind_char(&z, 'a') == 0);
+
+  tmk_str empty = tmk_str_create();
+  assert(tmk_str_equal(&z, &empty));
+  assert(tmk_str_equal(&empty, &z));
+  assert(tmk_str_equal_nocase(&z, &empty));
+  tmk_str_free(&empty);
+
+  tmk_str_clear(&z);
+  tmk_str_trim(&z);
+  tmk_str_set_len(&z, 0);
+  tmk_str_append_n(&z, NULL, 0);
+  tmk_str_append(&z, &z);
+  assert(z.len == 0);
+
+  tmk_str c = tmk_str_clone(&z);
+  check_invariants(&c);
+  assert(c.len == 0);
+  tmk_str_free(&c);
+
+  tmk_str sub = tmk_str_substr(&z, 0, TMK_STR_NPOS);
+  check_invariants(&sub);
+  tmk_str_free(&sub);
+
+  tmk_str_array tokens = tmk_str_tokenize(&z, ' ');
+  assert(tokens.len == 0);
+  tmk_str_array_free(&tokens);
+
+  // Writing allocates the buffer
+  tmk_str_format(&z, "%d", 42);
+  check_invariants(&z);
+  assert(strcmp(z.str, "42") == 0);
+  tmk_str_free(&z);
+
+  tmk_str_append_cstr(&z, "abc");
+  check_invariants(&z);
+  assert(strcmp(z.str, "abc") == 0);
+  tmk_str_free(&z);
+
+  tmk_str_push(&z, 'x');
+  check_invariants(&z);
+  assert(strcmp(z.str, "x") == 0);
+  tmk_str_free(&z);
+
+  tmk_str_reserve(&z, 16);
+  check_invariants(&z);
+  assert(z.capacity >= 16);
+  tmk_str_free(&z);
+
+  // A zeroed string can also read lines, and stays valid at the end of file
+  FILE* f = tmpfile();
+  assert(f != NULL);
+  fputs("line\n", f);
+  rewind(f);
+  assert(tmk_str_read_line(&z, f) == 5);
+  check_invariants(&z);
+  assert(tmk_str_read_line(&z, f) == -1);
+  assert(strcmp(tmk_str_cstr(&z), "") == 0);
+  tmk_str_free(&z);
+  fclose(f);
+
+  tmk_str_free(&z);
 }

@@ -3,11 +3,11 @@
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/poll.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -19,20 +19,20 @@ extern char** environ;
 
 typedef enum
 {
-  PENDING,
-  RUNNING,
-  DONE,
-  FAILED
-} tmk_runner_job_status;
+  JOB_PENDING,
+  JOB_RUNNING,
+  JOB_DONE,
+  JOB_FAILED
+} job_state;
 
 typedef struct
 {
-  tmk_runner_command command;
+  tmk_runner_command* command;
+  job_state state;
   pid_t pid;
-  int pipes[2];
-  tmk_str buffer;
-  tmk_runner_job_status status;
-} tmk_runner_job;
+  // Everything the command writes to stdout and stderr
+  tmk_str output;
+} job;
 
 typedef enum
 {
@@ -40,13 +40,13 @@ typedef enum
   CHILD_EXIT_FAILURE,
   CHILD_SIGNALED,
   CHILD_WAIT_ERROR
-} tmk_runner_child_result;
+} child_result;
 
-static tmk_runner_child_result wait_child(pid_t pid, int* detail)
+// detail receives the exit code, the signal or errno, depending on the result
+static child_result wait_child(pid_t pid, int* detail)
 {
   int status;
   pid_t r;
-
   do
   {
     r = waitpid(pid, &status, 0);
@@ -57,13 +57,11 @@ static tmk_runner_child_result wait_child(pid_t pid, int* detail)
     *detail = errno;
     return CHILD_WAIT_ERROR;
   }
-
   if (WIFEXITED(status))
   {
     *detail = WEXITSTATUS(status);
     return *detail == 0 ? CHILD_OK : CHILD_EXIT_FAILURE;
   }
-
   if (WIFSIGNALED(status))
   {
     *detail = WTERMSIG(status);
@@ -74,167 +72,155 @@ static tmk_runner_child_result wait_child(pid_t pid, int* detail)
   return CHILD_WAIT_ERROR;
 }
 
-static void report_statuses(const tmk_runner_job* jobs, size_t n_jobs,
-                            tmk_runner_command* commands)
+// Spawns the command of j with its stdout and stderr sent to a pipe, whose
+// read end is stored in fd. Logs the error and returns false on failure
+static bool start_job(job* j, int* fd)
 {
-  for (size_t i = 0; i < n_jobs; ++i)
+  int pipes[2];
+  if (pipe(pipes) != 0)
   {
-    switch (jobs[i].status)
-    {
-      case PENDING:
-        commands[i].status = TMK_RUNNER_STATUS_NOT_RUN;
-        break;
-      case DONE:
-        commands[i].status = TMK_RUNNER_STATUS_SUCCEEDED;
-        break;
-      case RUNNING:
-      case FAILED:
-        commands[i].status = TMK_RUNNER_STATUS_FAILED;
-        break;
-    }
+    tmk_log_error("pipe: %s", strerror(errno));
+    return false;
+  }
+
+  // Otherwise the next children would inherit the pipe, and keep it open after
+  // this command exits
+  if (fcntl(pipes[0], F_SETFD, FD_CLOEXEC) != 0 ||
+      fcntl(pipes[1], F_SETFD, FD_CLOEXEC) != 0)
+  {
+    tmk_log_error("fcntl: %s", strerror(errno));
+    close(pipes[0]);
+    close(pipes[1]);
+    return false;
+  }
+
+  posix_spawn_file_actions_t actions;
+  int err = posix_spawn_file_actions_init(&actions);
+  if (err != 0)
+  {
+    tmk_log_error("posix_spawn_file_actions_init: %s", strerror(err));
+    close(pipes[0]);
+    close(pipes[1]);
+    return false;
+  }
+
+  err = posix_spawn_file_actions_adddup2(&actions, pipes[1], STDOUT_FILENO);
+  if (err == 0)
+  {
+    err = posix_spawn_file_actions_adddup2(&actions, pipes[1], STDERR_FILENO);
+  }
+  if (err == 0)
+  {
+    char** argv = j->command->argv;
+    err = posix_spawnp(&j->pid, argv[0], &actions, NULL, argv, environ);
+  }
+  posix_spawn_file_actions_destroy(&actions);
+  close(pipes[1]);
+
+  if (err != 0)
+  {
+    tmk_log_error("%s: could not start %s: %s", tmk_str_cstr(&j->command->name),
+                  j->command->argv[0], strerror(err));
+    close(pipes[0]);
+    return false;
+  }
+
+  *fd = pipes[0];
+  j->output = tmk_str_create();
+  return true;
+}
+
+// Reaps the process of j once its output is closed, and reports the result
+// Returns false if the process could not be waited for
+static bool finish_job(job* j)
+{
+  const char* name = tmk_str_cstr(&j->command->name);
+  const char* output = tmk_str_cstr(&j->output);
+  int detail;
+  child_result result = wait_child(j->pid, &detail);
+
+  j->state = result == CHILD_OK ? JOB_DONE : JOB_FAILED;
+  switch (result)
+  {
+    case CHILD_OK:
+      tmk_log_info("%s\n%s", tmk_str_cstr(&j->command->display), output);
+      break;
+    case CHILD_EXIT_FAILURE:
+      tmk_log_error("\n%s", output);
+      tmk_log_error("%s: process exited with code %d", name, detail);
+      break;
+    case CHILD_SIGNALED:
+      tmk_log_error("\n%s", output);
+      tmk_log_error("%s: process killed by signal %d", name, detail);
+      break;
+    case CHILD_WAIT_ERROR:
+      tmk_log_error("waitpid for %s: %s", name,
+                    detail != 0 ? strerror(detail) : "unexpected status");
+      break;
+  }
+
+  tmk_str_free(&j->output);
+  return result != CHILD_WAIT_ERROR;
+}
+
+static tmk_runner_status status_of(job_state state)
+{
+  switch (state)
+  {
+    case JOB_PENDING:
+      return TMK_RUNNER_STATUS_NOT_RUN;
+    case JOB_DONE:
+      return TMK_RUNNER_STATUS_SUCCEEDED;
+    default:
+      return TMK_RUNNER_STATUS_FAILED;
   }
 }
 
-tmk_runner_result tmk_runner_run(tmk_runner_command* commands,
-                                 size_t n_commands, size_t parallel_proc)
+bool tmk_runner_run(tmk_runner_command* commands, size_t n_commands,
+                    size_t max_jobs)
 {
-  assert(parallel_proc > 0);
+  assert(max_jobs > 0);
 
   if (n_commands == 0)
   {
-    return TMK_RUNNER_RESULT_SUCCESS;
+    return true;
   }
 
-  tmk_runner_job* jobs = tmk_xrealloc(NULL,
-                                      n_commands * sizeof(tmk_runner_job));
-  struct pollfd* pfds = tmk_xrealloc(NULL, n_commands * sizeof(struct pollfd));
-
+  job* jobs = tmk_xrealloc(NULL, n_commands * sizeof(*jobs));
+  // pfds[i] is the pipe of jobs[i] while it runs, ignored by poll otherwise
+  struct pollfd* pfds = tmk_xrealloc(NULL, n_commands * sizeof(*pfds));
   for (size_t i = 0; i < n_commands; ++i)
   {
-    jobs[i].command = commands[i];
-    jobs[i].buffer = (tmk_str){0};
-    jobs[i].status = PENDING;
-    pfds[i].fd = -1;
-    pfds[i].events = 0;
+    jobs[i] = (job){.command = &commands[i], .state = JOB_PENDING};
+    pfds[i] = (struct pollfd){.fd = -1, .events = POLLIN};
   }
 
-  size_t avail_proc = parallel_proc;
-  bool has_failed_job = false;
+  // Jobs start in order, so the ones from next on are all pending
+  size_t next = 0;
+  size_t n_running = 0;
+  bool failed = false;
+
   for (;;)
   {
-    bool has_pending_job = false;
-    bool has_running_job = false;
-    for (size_t i = 0; i < n_commands; ++i)
+    while (!failed && n_running < max_jobs && next < n_commands)
     {
-      if (jobs[i].status == FAILED)
+      job* j = &jobs[next];
+      if (start_job(j, &pfds[next].fd))
       {
-        has_failed_job = true;
+        j->state = JOB_RUNNING;
+        n_running++;
       }
-      if (jobs[i].status == PENDING)
+      else
       {
-        has_pending_job = true;
+        j->state = JOB_FAILED;
+        failed = true;
       }
-      else if (jobs[i].status == RUNNING)
-      {
-        has_running_job = true;
-      }
+      next++;
     }
 
-    if (!has_running_job && (!has_pending_job || has_failed_job))
+    if (n_running == 0)
     {
       break;
-    }
-
-    while (avail_proc > 0 && has_pending_job && !has_failed_job)
-    {
-      size_t j = 0;
-      while (j < n_commands && jobs[j].status != PENDING)
-      {
-        j++;
-      }
-
-      if (j == n_commands)
-      {
-        break;
-      }
-
-      if (pipe(jobs[j].pipes) != 0)
-      {
-        log_msg(ERROR, "pipe: %s", strerror(errno));
-        jobs[j].status = FAILED;
-        goto exit_error;
-      }
-
-      if (fcntl(jobs[j].pipes[0], F_SETFD, FD_CLOEXEC) != 0 ||
-          fcntl(jobs[j].pipes[1], F_SETFD, FD_CLOEXEC) != 0)
-      {
-        log_msg(ERROR, "fcntl: %s", strerror(errno));
-        jobs[j].status = FAILED;
-        close(jobs[j].pipes[0]);
-        close(jobs[j].pipes[1]);
-        goto exit_error;
-      }
-
-      posix_spawn_file_actions_t fa;
-      int err = posix_spawn_file_actions_init(&fa);
-      if (err)
-      {
-        log_msg(ERROR, "posix_spawn_file_actions_init: %s", strerror(err));
-        jobs[j].status = FAILED;
-        close(jobs[j].pipes[0]);
-        close(jobs[j].pipes[1]);
-        goto exit_error;
-      }
-
-      err = posix_spawn_file_actions_adddup2(&fa, jobs[j].pipes[1],
-                                             STDOUT_FILENO);
-      if (err)
-      {
-        log_msg(ERROR, "posix_spawn_file_actions_adddup2: %s", strerror(err));
-        jobs[j].status = FAILED;
-        close(jobs[j].pipes[0]);
-        close(jobs[j].pipes[1]);
-        posix_spawn_file_actions_destroy(&fa);
-        goto exit_error;
-      }
-
-      err = posix_spawn_file_actions_adddup2(&fa, jobs[j].pipes[1],
-                                             STDERR_FILENO);
-      if (err)
-      {
-        log_msg(ERROR, "posix_spawn_file_actions_adddup2: %s", strerror(err));
-        jobs[j].status = FAILED;
-        close(jobs[j].pipes[0]);
-        close(jobs[j].pipes[1]);
-        posix_spawn_file_actions_destroy(&fa);
-        goto exit_error;
-      }
-
-      err = posix_spawnp(&jobs[j].pid, jobs[j].command.argv[0], &fa, NULL,
-                         jobs[j].command.argv, environ);
-      posix_spawn_file_actions_destroy(&fa);
-      if (err)
-      {
-        log_msg(ERROR, "posix_spawnp: %s", strerror(err));
-        jobs[j].status = FAILED;
-        close(jobs[j].pipes[0]);
-        close(jobs[j].pipes[1]);
-        goto exit_error;
-      }
-
-      jobs[j].status = RUNNING;
-      jobs[j].buffer = tmk_str_create_with_capacity(1024);
-
-      close(jobs[j].pipes[1]);
-      pfds[j].fd = jobs[j].pipes[0];
-      pfds[j].events = POLLIN;
-
-      avail_proc--;
-    }
-
-    if (avail_proc == parallel_proc)
-    {
-      continue;
     }
 
     if (poll(pfds, n_commands, -1) == -1)
@@ -243,105 +229,75 @@ tmk_runner_result tmk_runner_run(tmk_runner_command* commands,
       {
         continue;
       }
-      else
-      {
-        log_msg(ERROR, "poll: %s", strerror(errno));
-        goto exit_error;
-      }
+      tmk_log_error("poll: %s", strerror(errno));
+      goto abort;
     }
 
     for (size_t i = 0; i < n_commands; ++i)
     {
-      if (jobs[i].status != RUNNING)
+      if (pfds[i].fd == -1 || pfds[i].revents == 0)
       {
         continue;
       }
 
-      if (pfds[i].revents & (POLLIN | POLLHUP | POLLERR))
+      char buf[4096];
+      ssize_t n = read(pfds[i].fd, buf, sizeof(buf));
+      if (n > 0)
       {
-        char buf[4096];
-        ssize_t n = read(pfds[i].fd, buf, sizeof(buf));
-        if (n > 0)
-        {
-          tmk_str_append_n(&jobs[i].buffer, buf, n);
-        }
-        else if (n == 0 || errno != EINTR)
-        {
-          close(pfds[i].fd);
-          pfds[i].fd = -1;
-          avail_proc++;
-
-          int detail;
-          switch (wait_child(jobs[i].pid, &detail))
-          {
-            case CHILD_OK:
-              jobs[i].status = DONE;
-              log_msg(INFO, "%s\n%s", tmk_str_cstr(&jobs[i].command.display),
-                      tmk_str_cstr(&jobs[i].buffer));
-              break;
-
-            case CHILD_EXIT_FAILURE:
-              jobs[i].status = FAILED;
-              log_msg(ERROR, "\n%s", tmk_str_cstr(&jobs[i].buffer));
-              log_msg(ERROR,
-                      "%s: process exited "
-                      "with code %d",
-                      tmk_str_cstr(&jobs[i].command.name), detail);
-              break;
-
-            case CHILD_SIGNALED:
-              jobs[i].status = FAILED;
-              log_msg(ERROR, "\n%s", tmk_str_cstr(&jobs[i].buffer));
-              log_msg(ERROR,
-                      "%s: process killed "
-                      "by signal %d",
-                      tmk_str_cstr(&jobs[i].command.name), detail);
-              break;
-
-            case CHILD_WAIT_ERROR:
-              jobs[i].status = FAILED;
-              log_msg(ERROR, "waitpid for %s: %s",
-                      tmk_str_cstr(&jobs[i].command.name),
-                      detail ? strerror(detail)
-                             : "unexpected child "
-                               "status");
-              goto exit_error;
-          }
-
-          tmk_str_free(&jobs[i].buffer);
-        }
+        tmk_str_append_n(&jobs[i].output, buf, (size_t)n);
+        continue;
       }
+      if (n == -1 && errno == EINTR)
+      {
+        continue;
+      }
+
+      // The command closed its output, so it has exited or is about to
+      close(pfds[i].fd);
+      pfds[i].fd = -1;
+      n_running--;
+      if (!finish_job(&jobs[i]))
+      {
+        goto abort;
+      }
+      failed = failed || jobs[i].state == JOB_FAILED;
     }
   }
 
-  report_statuses(jobs, n_commands, commands);
-  free(jobs);
-  free(pfds);
-
-  return has_failed_job ? TMK_RUNNER_RESULT_FAILED : TMK_RUNNER_RESULT_SUCCESS;
-
-exit_error:
   for (size_t i = 0; i < n_commands; ++i)
   {
-    if (jobs[i].status == RUNNING)
-    {
-      if (pfds[i].fd != -1)
-      {
-        close(pfds[i].fd);
-      }
-      pfds[i].fd = -1;
-      int d;
-      wait_child(jobs[i].pid, &d);
-    }
-
-    tmk_str_free(&jobs[i].buffer);
+    commands[i].status = status_of(jobs[i].state);
   }
-
-  report_statuses(jobs, n_commands, commands);
   free(jobs);
   free(pfds);
 
-  return TMK_RUNNER_RESULT_FAILED;
+  return !failed;
+
+abort:
+  // The results are unknown, so whatever was still running has failed
+  for (size_t i = 0; i < n_commands; ++i)
+  {
+    if (jobs[i].state == JOB_RUNNING && pfds[i].fd != -1)
+    {
+      close(pfds[i].fd);
+      int detail;
+      wait_child(jobs[i].pid, &detail);
+      jobs[i].state = JOB_FAILED;
+    }
+    tmk_str_free(&jobs[i].output);
+    commands[i].status = status_of(jobs[i].state);
+  }
+  free(jobs);
+  free(pfds);
+
+  return false;
+}
+
+void tmk_runner_command_free(tmk_runner_command* cmd)
+{
+  free(cmd->argv);
+  tmk_str_free(&cmd->display);
+  tmk_str_free(&cmd->name);
 }
 
 void tmk_runner_command_array_push(tmk_runner_command_array* arr,
@@ -350,22 +306,18 @@ void tmk_runner_command_array_push(tmk_runner_command_array* arr,
   if (arr->len == arr->capacity)
   {
     size_t capacity = arr->capacity == 0 ? 8 : arr->capacity * 2;
-    arr->items = tmk_xrealloc(arr->items,
-                              capacity * sizeof(tmk_runner_command));
+    arr->items = tmk_xrealloc(arr->items, capacity * sizeof(*arr->items));
     arr->capacity = capacity;
   }
 
-  arr->items[arr->len] = cmd;
-  arr->len++;
+  arr->items[arr->len++] = cmd;
 }
 
 void tmk_runner_command_array_free(tmk_runner_command_array* arr)
 {
   for (size_t i = 0; i < arr->len; ++i)
   {
-    free(arr->items[i].argv);
-    tmk_str_free(&arr->items[i].display);
-    tmk_str_free(&arr->items[i].name);
+    tmk_runner_command_free(&arr->items[i]);
   }
   free(arr->items);
   *arr = (tmk_runner_command_array){0};

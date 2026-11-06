@@ -7,7 +7,7 @@
 
 void test_str_array_zeroed(void)
 {
-  /* A zeroed array is empty and can be freed, even twice. */
+  // A zeroed array is empty and can be freed, even twice
   tmk_str_array arr = {0};
   assert(arr.len == 0);
   tmk_str_array_free(&arr);
@@ -24,11 +24,11 @@ void test_str_array_push(void)
   tmk_str_array_push(&arr, s);
   assert(arr.len == 1);
   assert(arr.capacity >= 1);
-  /* Moved, not copied. */
+  // Moved, not copied
   assert(arr.items[0].str == buf);
   assert(tmk_str_equal_cstr(&arr.items[0], "hello"));
 
-  /* Freeing the array frees the strings it owns */
+  // Freeing the array frees the strings it owns
   tmk_str_array_free(&arr);
   assert(arr.items == NULL);
   assert(arr.len == 0);
@@ -66,7 +66,7 @@ void test_str_array_take(void)
   char* buf = arr.items[1].str;
 
   tmk_str taken = tmk_str_array_take(&arr, 1);
-  /* Moved, not copied, and the slot is emptied. */
+  // Moved, not copied, and the slot is emptied
   assert(taken.str == buf);
   assert(tmk_str_equal_cstr(&taken, "second"));
   assert(arr.items[1].str == NULL);
@@ -97,12 +97,12 @@ static void check_tokenize(const char* in, const char** expected,
   tmk_str_free(&s);
 }
 
-void test_tokenize(void)
+void test_str_tokenize(void)
 {
   const char* abc[] = {"a", "b", "c"};
   check_tokenize("a b c", abc, 3);
 
-  /* Leading, trailing and repeated delimiters produce no empty tokens. */
+  // Leading, trailing and repeated delimiters produce no empty tokens
   const char* spaces[] = {"trailing", "spaces"};
   check_tokenize("  trailing  spaces  ", spaces, 2);
 

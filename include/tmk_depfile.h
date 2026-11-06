@@ -1,16 +1,14 @@
 #ifndef TMK_DEPFILE_H
 #define TMK_DEPFILE_H
 
-#include <sys/types.h>
+#include <stdbool.h>
 
 #include "tmk_str.h"
 #include "tmk_str_array.h"
 
-// Reads the prerequisites of a make-style depfile (as written by gcc -MMD),
-// skipping the targets
-// deps is overwritten, so it must not hold anything that needs freeing
-// Returns the number of prerequisites, or -1 if the file cannot be read (deps
-// is then left empty)
-ssize_t parse_depfile(tmk_str_array* deps, const tmk_str* path);
+// Reads the prerequisites of a make-style depfile, as written by gcc -MMD,
+// skipping its target. deps is overwritten, so it must not own anything
+// Returns false, leaving deps empty, if the file cannot be read
+bool tmk_depfile_parse(tmk_str_array* deps, const tmk_str* path);
 
 #endif

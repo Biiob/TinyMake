@@ -1,6 +1,7 @@
-#include "tmk_cli_parser.h"
+#include "tmk_cli.h"
 #include "tmk_cmdlog.h"
 #include "tmk_config.h"
+#include "tmk_constants.h"
 #include "tmk_engine.h"
 #include "tmk_fs.h"
 #include "tmk_log.h"
@@ -9,52 +10,46 @@
 
 int main(int argc, char* argv[])
 {
-  log_msg(INFO, "Starting build...");
+  tmk_log_info("Starting build...");
 
-  command_line_arguments args = {0};
-  if (parse_arguments(argc, argv, &args) != 0 || !tmk_fs_init_work_dirs())
+  tmk_cli_args args;
+  if (!tmk_cli_parse(&args, argc, argv) || !tmk_fs_init_work_dirs())
   {
-    log_msg(ERROR, "Build has ended in error. See above for the details.");
+    tmk_log_error("Build has ended in error. See above for the details.");
     return -1;
   }
 
-  build_state state = {
-      .n_processes = args.n_processes != 0 ? args.n_processes : 1,
-  };
-  tmk_str cmdlog_path = tmk_str_from_cstr(".tinymake_log");
+  tmk_engine_state state = {.max_jobs = args.max_jobs};
+  tmk_str cmdlog_path = tmk_str_from_cstr(TMK_CMDLOG_FILE);
   tmk_cmdlog_load(&state.cmdlog, &cmdlog_path);
 
-  build_config config = {0};
-  tmk_str build_file_path = tmk_str_from_cstr("build.txt");
-  log_msg(DBG, "Parsing the content of 'build.txt'");
-  int rc = parse_build_file(&config, &build_file_path);
+  tmk_config config = {0};
+  tmk_str build_file_path = tmk_str_from_cstr(TMK_BUILD_FILE);
+  bool ok = tmk_parser_parse(&config, &build_file_path);
   tmk_str_free(&build_file_path);
 
-  for (size_t i = 0; rc == 0 && i < config.targets_count; ++i)
+  for (size_t i = 0; ok && i < config.n_targets; ++i)
   {
-    const target* target = &config.targets[i];
-    log_msg(INFO, "Building target: %s", tmk_str_cstr(&target->name));
-    rc = generate_object_files(&config, &state, target);
-    if (rc == 0)
-    {
-      rc = link_object_files(&config, &state, target);
-    }
+    const tmk_target* target = &config.targets[i];
+    tmk_log_info("Building target: %s", tmk_str_cstr(&target->path));
+    ok = tmk_engine_compile(&config, &state, target) &&
+         tmk_engine_link(&config, &state, target);
   }
 
-  if (tmk_cmdlog_save(&state.cmdlog, &cmdlog_path) != 0)
+  if (!tmk_cmdlog_save(&state.cmdlog, &cmdlog_path))
   {
-    log_msg(WARN, "Command log file was not updated");
+    tmk_log_warn("Command log file was not updated");
   }
   tmk_str_free(&cmdlog_path);
   tmk_cmdlog_free(&state.cmdlog);
-  free_build_config(&config);
+  tmk_config_free(&config);
 
-  if (rc != 0)
+  if (!ok)
   {
-    log_msg(ERROR, "Build has ended in error. See above for the details.");
+    tmk_log_error("Build has ended in error. See above for the details.");
     return -1;
   }
 
-  log_msg(INFO, "Build has ended");
+  tmk_log_info("Build has ended");
   return 0;
 }

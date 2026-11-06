@@ -1,7 +1,5 @@
 #include "tmk_engine.h"
 
-#include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 
@@ -15,56 +13,79 @@
 #include "tmk_str.h"
 #include "tmk_str_array.h"
 
-static char** build_argv(int argc, const build_config* config,
-                         const compile_file* file)
+// The arguments point into config and source, which must outlive the result
+static char** compile_argv(const tmk_config* config, const tmk_source* source)
 {
-  char** argv = tmk_xrealloc(NULL, argc * sizeof(char*));
+  // Compiler, flags, "-I <dir>" pairs, 8 fixed arguments and NULL
+  size_t argc = config->compile_flags.len + 2 * config->include_dirs.len + 10;
+  char** argv = tmk_xrealloc(NULL, argc * sizeof(*argv));
+
   size_t arg = 0;
   argv[arg++] = config->compiler.str;
   for (size_t i = 0; i < config->compile_flags.len; ++i)
   {
     argv[arg++] = config->compile_flags.items[i].str;
   }
-  for (size_t i = 0; i < config->includes_dir.len; ++i)
+  for (size_t i = 0; i < config->include_dirs.len; ++i)
   {
     argv[arg++] = "-I";
-    argv[arg++] = config->includes_dir.items[i].str;
+    argv[arg++] = config->include_dirs.items[i].str;
   }
   argv[arg++] = "-fdiagnostics-color=always";
   argv[arg++] = "-MMD";
   argv[arg++] = "-MF";
-  argv[arg++] = file->d_path.str;
+  argv[arg++] = source->d_path.str;
   argv[arg++] = "-c";
-  argv[arg++] = file->c_path.str;
+  argv[arg++] = source->c_path.str;
   argv[arg++] = "-o";
-  argv[arg++] = file->o_path.str;
+  argv[arg++] = source->o_path.str;
   argv[arg] = NULL;
 
   return argv;
 }
 
-static tmk_str build_display_command(char** argv, size_t argc)
+// The arguments point into config and target, which must outlive the result
+static char** link_argv(const tmk_config* config, const tmk_target* target)
 {
-  tmk_str command = tmk_str_create();
-  for (size_t i = 0; i < argc; ++i)
+  // Compiler, flags, "-o <path>", objects and NULL
+  size_t argc = config->link_flags.len + target->n_sources + 4;
+  char** argv = tmk_xrealloc(NULL, argc * sizeof(*argv));
+
+  size_t arg = 0;
+  argv[arg++] = config->compiler.str;
+  for (size_t i = 0; i < config->link_flags.len; ++i)
   {
-    if (argv[i] != NULL && argv[i][0] != '\0')
-    {
-      tmk_str_append_format(&command, "%s ", argv[i]);
-    }
+    argv[arg++] = config->link_flags.items[i].str;
   }
+  argv[arg++] = "-o";
+  argv[arg++] = target->path.str;
+  for (size_t i = 0; i < target->n_sources; ++i)
+  {
+    argv[arg++] = target->sources[i].o_path.str;
+  }
+  argv[arg] = NULL;
 
-  tmk_str_trim(&command);
-
-  return command;
+  return argv;
 }
 
+// The command line as shown to the user and recorded in the command log
+static tmk_str join_argv(char* const* argv)
+{
+  tmk_str line = tmk_str_create();
+  for (size_t i = 0; argv[i] != NULL; ++i)
+  {
+    tmk_str_append_format(&line, i == 0 ? "%s" : " %s", argv[i]);
+  }
+
+  return line;
+}
+
+// output is up to date if it exists, is newer than all of its inputs, and was
+// built by the same command
 static bool up_to_date(const tmk_str* output, const tmk_str_array* inputs,
                        const tmk_str* command, const tmk_cmdlog* cmdlog)
 {
   struct stat out_stat;
-
-  // Output does not exist
   if (stat(tmk_str_cstr(output), &out_stat) != 0)
   {
     return false;
@@ -73,52 +94,41 @@ static bool up_to_date(const tmk_str* output, const tmk_str_array* inputs,
   for (size_t i = 0; i < inputs->len; ++i)
   {
     struct stat in_stat;
-    // Input does not exist
     if (stat(tmk_str_cstr(&inputs->items[i]), &in_stat) != 0)
     {
-      log_msg(DBG, "Could not find or access the input file: %s",
-              tmk_str_cstr(&inputs->items[i]));
+      tmk_log_debug("Could not find or access the input file: %s",
+                    tmk_str_cstr(&inputs->items[i]));
       return false;
     }
-
-    // Input is newer than output
     if (tmk_fs_is_newer(&in_stat, &out_stat))
     {
       return false;
     }
   }
 
-  // Command is already present in the command log
   const tmk_str* recorded = tmk_cmdlog_find(cmdlog, output);
-  bool is_command_recorded = recorded != NULL &&
-                             tmk_str_equal(command, recorded);
-
-  return is_command_recorded;
+  return recorded != NULL && tmk_str_equal(command, recorded);
 }
 
-// The object is up to date if the depfile exists, and neither the source, the
-// headers it lists nor the command changed
-static bool object_up_to_date(const compile_file* file, const tmk_str* command,
+// The inputs of an object are its source and the headers its depfile lists
+static bool object_up_to_date(const tmk_source* source, const tmk_str* command,
                               const tmk_cmdlog* cmdlog)
 {
-  tmk_str_array inputs = {0};
-  if (parse_depfile(&inputs, &file->d_path) == -1)
+  tmk_str_array inputs;
+  if (!tmk_depfile_parse(&inputs, &source->d_path))
   {
-    log_msg(DBG, "Could not read dependency file: %s. Recompiling...",
-            tmk_str_cstr(&file->d_path));
-    tmk_str_array_free(&inputs);
+    tmk_log_debug("Could not read dependency file: %s",
+                  tmk_str_cstr(&source->d_path));
     return false;
   }
-  tmk_str_array_push(&inputs, tmk_str_clone(&file->c_path));
+  tmk_str_array_push(&inputs, tmk_str_clone(&source->c_path));
 
-  bool result = up_to_date(&file->o_path, &inputs, command, cmdlog);
+  bool result = up_to_date(&source->o_path, &inputs, command, cmdlog);
   tmk_str_array_free(&inputs);
 
   return result;
 }
 
-// Records the commands that succeeded, so that they are not run again while
-// nothing changes
 static void record_succeeded(tmk_cmdlog* cmdlog,
                              const tmk_runner_command* commands,
                              size_t n_commands)
@@ -132,108 +142,76 @@ static void record_succeeded(tmk_cmdlog* cmdlog,
   }
 }
 
-int generate_object_files(const build_config* config, build_state* state,
-                          const target* target)
+bool tmk_engine_compile(const tmk_config* config, tmk_engine_state* state,
+                        const tmk_target* target)
 {
-  size_t n_inputs = target->source_files_count;
-  size_t argc = config->compile_flags.len + 2 * config->includes_dir.len + 10;
   tmk_runner_command_array commands = {0};
-  int rc = 0;
+  bool ok = true;
 
-  for (size_t i = 0; i < n_inputs; ++i)
+  for (size_t i = 0; ok && i < target->n_sources; ++i)
   {
-    const compile_file* file = &target->source_files[i];
-    char** argv = build_argv(argc, config, file);
-    tmk_str display = build_display_command(argv, argc);
+    const tmk_source* source = &target->sources[i];
+    tmk_runner_command cmd = {
+        .argv = compile_argv(config, source),
+        .output = &source->o_path,
+    };
+    cmd.display = join_argv(cmd.argv);
 
-    if (object_up_to_date(file, &display, &state->cmdlog))
+    if (object_up_to_date(source, &cmd.display, &state->cmdlog))
     {
-      log_msg(INFO, "Skipping compilation of: %s", tmk_str_cstr(&file->c_path));
-      free(argv);
-      tmk_str_free(&display);
+      tmk_log_info("Skipping compilation of: %s",
+                   tmk_str_cstr(&source->c_path));
+      tmk_runner_command_free(&cmd);
       continue;
     }
 
-    tmk_str out_dir = tmk_path_get_dir(&file->o_path);
-    bool dir_created = tmk_fs_create_dir(&out_dir);
-    tmk_str_free(&out_dir);
-    if (!dir_created)
-    {
-      free(argv);
-      tmk_str_free(&display);
-      rc = -1;
-      goto cleanup;
-    }
+    tmk_str dir = tmk_path_get_dir(&source->o_path);
+    ok = tmk_fs_create_dir(&dir);
+    tmk_str_free(&dir);
 
-    tmk_runner_command cmd = {
-        .argv = argv,
-        .display = display,
-        .name = tmk_str_clone(&file->c_path),
-        .output = &file->o_path,
-    };
+    cmd.name = tmk_str_clone(&source->c_path);
     tmk_runner_command_array_push(&commands, cmd);
   }
 
-  tmk_runner_result r = tmk_runner_run(commands.items, commands.len,
-                                       state->n_processes);
-
-  record_succeeded(&state->cmdlog, commands.items, commands.len);
-  rc = r == TMK_RUNNER_RESULT_FAILED ? -1 : 0;
-
-cleanup:
+  if (ok)
+  {
+    ok = tmk_runner_run(commands.items, commands.len, state->max_jobs);
+    record_succeeded(&state->cmdlog, commands.items, commands.len);
+  }
   tmk_runner_command_array_free(&commands);
 
-  return rc;
+  return ok;
 }
 
-int link_object_files(const build_config* config, build_state* state,
-                      const target* target)
+bool tmk_engine_link(const tmk_config* config, tmk_engine_state* state,
+                     const tmk_target* target)
 {
-  size_t argc = config->link_flags.len + target->source_files_count + 4;
-  char** argv = tmk_xrealloc(NULL, argc * sizeof(char*));
-  size_t arg = 0;
-  argv[arg++] = config->compiler.str;
-  for (size_t i = 0; i < config->link_flags.len; ++i)
-  {
-    argv[arg++] = config->link_flags.items[i].str;
-  }
-
-  argv[arg++] = "-o";
-  argv[arg++] = target->name.str;
+  tmk_runner_command cmd = {
+      .argv = link_argv(config, target),
+      .name = tmk_str_clone(&target->path),
+      .output = &target->path,
+  };
+  cmd.display = join_argv(cmd.argv);
 
   tmk_str_array inputs = {0};
-  for (size_t i = 0; i < target->source_files_count; ++i)
+  for (size_t i = 0; i < target->n_sources; ++i)
   {
-    argv[arg++] = target->source_files[i].o_path.str;
-    tmk_str_array_push(&inputs, tmk_str_clone(&target->source_files[i].o_path));
+    tmk_str_array_push(&inputs, tmk_str_clone(&target->sources[i].o_path));
   }
 
-  argv[arg] = NULL;
-
-  tmk_str display = build_display_command(argv, argc);
-
-  tmk_runner_result r = TMK_RUNNER_RESULT_SUCCESS;
-
-  if (!up_to_date(&target->name, &inputs, &display, &state->cmdlog))
+  bool ok = true;
+  if (up_to_date(&target->path, &inputs, &cmd.display, &state->cmdlog))
   {
-    tmk_runner_command cmd = {
-        .argv = argv,
-        .display = display,
-        .name = tmk_str_clone(&target->name),
-        .output = &target->name,
-    };
-    r = tmk_runner_run(&cmd, 1, state->n_processes);
-
-    record_succeeded(&state->cmdlog, &cmd, 1);
-    tmk_str_free(&cmd.name);
+    tmk_log_info("Nothing to link. Skipping...");
   }
   else
   {
-    log_msg(INFO, "Nothing to link. Skipping...");
+    ok = tmk_runner_run(&cmd, 1, state->max_jobs);
+    record_succeeded(&state->cmdlog, &cmd, 1);
   }
-  tmk_str_array_free(&inputs);
-  tmk_str_free(&display);
-  free(argv);
 
-  return r == TMK_RUNNER_RESULT_FAILED ? -1 : 0;
+  tmk_str_array_free(&inputs);
+  tmk_runner_command_free(&cmd);
+
+  return ok;
 }

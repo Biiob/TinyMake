@@ -15,8 +15,13 @@
 // Sets the capacity to exactly capacity bytes
 static void resize(tmk_str* str, size_t capacity)
 {
+  bool had_buffer = str->str != NULL;
   str->str = tmk_xrealloc(str->str, capacity);
   str->capacity = capacity;
+  if (!had_buffer)
+  {
+    str->str[0] = '\0';
+  }
 }
 
 static void grow(tmk_str* str, size_t needed)
@@ -34,8 +39,7 @@ static void grow(tmk_str* str, size_t needed)
 
 tmk_str tmk_str_create(void)
 {
-  tmk_str str = tmk_str_create_with_capacity(TMK_STR_MIN_CAP);
-  return str;
+  return tmk_str_create_with_capacity(TMK_STR_MIN_CAP);
 }
 
 tmk_str tmk_str_create_with_capacity(size_t capacity)
@@ -44,7 +48,6 @@ tmk_str tmk_str_create_with_capacity(size_t capacity)
 
   tmk_str str = {0};
   resize(&str, capacity);
-  str.str[0] = '\0';
 
   return str;
 }
@@ -59,9 +62,11 @@ void tmk_str_reserve(tmk_str* str, size_t capacity)
 
 void tmk_str_clear(tmk_str* str)
 {
-  assert(str->str != NULL);
   str->len = 0;
-  str->str[0] = '\0';
+  if (str->str != NULL)
+  {
+    str->str[0] = '\0';
+  }
 }
 
 void tmk_str_free(tmk_str* str)
@@ -80,16 +85,19 @@ tmk_str tmk_str_clone(const tmk_str* other)
 tmk_str tmk_str_from_buf(const char* buf, size_t n)
 {
   tmk_str str = tmk_str_create_with_capacity(n + 1);
-  memcpy(str.str, buf, n);
+  if (n > 0)
+  {
+    memcpy(str.str, buf, n);
+  }
   str.len = n;
   str.str[str.len] = '\0';
 
   return str;
 }
 
-tmk_str tmk_str_from_cstr(const char* other)
+tmk_str tmk_str_from_cstr(const char* cstr)
 {
-  return tmk_str_from_buf(other, strlen(other));
+  return tmk_str_from_buf(cstr, strlen(cstr));
 }
 
 tmk_str tmk_str_substr(const tmk_str* str, size_t pos, size_t n)
@@ -106,11 +114,11 @@ tmk_str tmk_str_substr(const tmk_str* str, size_t pos, size_t n)
   return tmk_str_from_buf(str->str + pos, n);
 }
 
-tmk_str tmk_str_take(char* s)
+tmk_str tmk_str_take(char* cstr)
 {
-  size_t len = strlen(s);
+  size_t len = strlen(cstr);
   tmk_str str = {
-      .str = s,
+      .str = cstr,
       .len = len,
       .capacity = len + 1,
   };
@@ -128,19 +136,9 @@ char* tmk_str_release(tmk_str* str)
   return tmp;
 }
 
-void tmk_str_set(tmk_str* str, size_t i, char c)
-{
-  if (i >= str->len || c == '\0')
-  {
-    return;
-  }
-
-  str->str[i] = c;
-}
-
 const char* tmk_str_cstr(const tmk_str* str)
 {
-  return str->str;
+  return str->str != NULL ? str->str : "";
 }
 
 char* tmk_str_data(tmk_str* str)
@@ -150,6 +148,11 @@ char* tmk_str_data(tmk_str* str)
 
 void tmk_str_set_len(tmk_str* str, size_t len)
 {
+  if (str->str == NULL && len == 0)
+  {
+    return;
+  }
+
   assert(len < str->capacity);
   str->len = len;
   str->str[len] = '\0';
@@ -157,6 +160,11 @@ void tmk_str_set_len(tmk_str* str, size_t len)
 
 tmk_str* tmk_str_append_n(tmk_str* dst, const char* src, size_t n)
 {
+  if (n == 0)
+  {
+    return dst;
+  }
+
   // src may point into dst, so it must be rebased if grow() moves the buffer
   uintptr_t begin = (uintptr_t)dst->str;
   bool aliased = dst->str != NULL && (uintptr_t)src >= begin &&
@@ -198,9 +206,10 @@ tmk_str* tmk_str_push(tmk_str* dst, char c)
 tmk_str* tmk_str_vappend_format(tmk_str* dst, const char* fmt, va_list args)
 {
   size_t available = dst->capacity - dst->len;
+  char* end = dst->str != NULL ? dst->str + dst->len : NULL;
   va_list copy;
   va_copy(copy, args);
-  int n = vsnprintf(dst->str + dst->len, available, fmt, copy);
+  int n = vsnprintf(end, available, fmt, copy);
   va_end(copy);
 
   if (n < 0)
@@ -250,6 +259,11 @@ tmk_str* tmk_str_format(tmk_str* dst, const char* fmt, ...)
 
 tmk_str* tmk_str_trim(tmk_str* str)
 {
+  if (str->str == NULL)
+  {
+    return str;
+  }
+
   size_t start = 0;
   size_t end = str->len;
 
@@ -281,7 +295,7 @@ bool tmk_str_equal(const tmk_str* str1, const tmk_str* str2)
     return false;
   }
 
-  return memcmp(str1->str, str2->str, str1->len) == 0;
+  return str1->len == 0 || memcmp(str1->str, str2->str, str1->len) == 0;
 }
 
 bool tmk_str_equal_cstr(const tmk_str* str1, const char* str2)
@@ -292,7 +306,7 @@ bool tmk_str_equal_cstr(const tmk_str* str1, const char* str2)
     return false;
   }
 
-  return memcmp(str1->str, str2, len) == 0;
+  return len == 0 || memcmp(str1->str, str2, len) == 0;
 }
 
 bool tmk_str_equal_nocase(const tmk_str* str1, const tmk_str* str2)
@@ -321,6 +335,12 @@ size_t tmk_str_find_char(const tmk_str* str, char c)
 
 size_t tmk_str_find_next_char(const tmk_str* str, size_t offset, char c)
 {
+  assert(offset <= str->len);
+  if (offset == str->len)
+  {
+    return str->len;
+  }
+
   const char* found = memchr(str->str + offset, c, str->len - offset);
 
   return found != NULL ? (size_t)(found - str->str) : str->len;
