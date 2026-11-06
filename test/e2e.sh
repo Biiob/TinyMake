@@ -213,8 +213,10 @@ first_build()
   expect_success
   expect_ran "compile src/main.c" "compile src/util.c" "link bin/app"
   expect_exit_value bin/app 0
-  expect_logged "obj/main.o"
-  expect_logged "obj/util.o"
+  [ -f obj/src/main.o ] || fail "obj/src/main.o was not created"
+  [ -f obj/src/main.d ] || fail "obj/src/main.d was not created"
+  expect_logged "obj/src/main.o"
+  expect_logged "obj/src/util.o"
   expect_logged "bin/app"
 }
 
@@ -313,7 +315,7 @@ newer_source_with_smaller_nsec()
 {
   built_project
   age_all
-  touch -d "2020-01-01 01:00:00.900000000" obj/util.o
+  touch -d "2020-01-01 01:00:00.900000000" obj/src/util.o
   touch -d "2020-01-01 01:30:00.100000000" src/util.c
   tmk
   expect_success
@@ -326,7 +328,7 @@ older_source_with_bigger_nsec()
   built_project
   age_all
   touch -d "2019-01-01 00:00:00.900000000" src/util.c
-  touch -d "2020-01-01 01:00:00.100000000" obj/util.o
+  touch -d "2020-01-01 01:00:00.100000000" obj/src/util.o
   tmk
   expect_success
   expect_nothing_ran
@@ -335,8 +337,8 @@ older_source_with_bigger_nsec()
 newer_source_within_the_same_second()
 {
   built_project
-  touch -d "2020-01-01 10:00:00.200000000" src/util.c src/main.c obj/util.o
-  touch -d "2020-01-01 10:00:00.100000000" obj/main.o
+  touch -d "2020-01-01 10:00:00.200000000" src/util.c src/main.c obj/src/util.o
+  touch -d "2020-01-01 10:00:00.100000000" obj/src/main.o
   touch -d "2020-01-01 10:00:00.900000000" bin/app
   tmk
   expect_success
@@ -399,7 +401,7 @@ source_deleted()
 object_deleted()
 {
   built_project
-  rm obj/util.o
+  rm obj/src/util.o
   tmk
   expect_success
   expect_ran "compile src/util.c" "link bin/app"
@@ -408,7 +410,7 @@ object_deleted()
 depfile_deleted()
 {
   built_project
-  rm obj/util.d
+  rm obj/src/util.d
   tmk
   expect_success
   expect_ran "compile src/util.c" "link bin/app"
@@ -461,6 +463,50 @@ shared_source_edited()
 }
 
 ################################################################################
+# Source directories
+################################################################################
+
+# Both util.c used to compile to obj/util.o, one overwriting the other
+same_name_in_two_directories()
+{
+  mkdir -p src/b
+  printf 'int util(void);\nint util_b(void);\n' > src/main.c
+  printf 'int main(void) { return util() + util_b(); }\n' >> src/main.c
+  set_util 3
+  echo "int util_b(void) { return 4; }" > src/b/util.c
+  write_build_file "binary app: src/main.c src/util.c src/b/util.c"
+  tmk -j 3
+  expect_success
+  expect_ran "compile src/main.c" "compile src/util.c" "compile src/b/util.c" \
+    "link bin/app"
+  expect_exit_value bin/app 7
+  expect_logged "obj/src/util.o"
+  expect_logged "obj/src/b/util.o"
+
+  tmk
+  expect_success
+  expect_nothing_ran
+
+  echo "int util_b(void) { return 5; }" > src/b/util.c
+  tmk
+  expect_success
+  expect_ran "compile src/b/util.c" "link bin/app"
+  expect_exit_value bin/app 8
+}
+
+# The directory of an object cannot be created
+object_directory_blocked()
+{
+  new_project
+  mkdir obj
+  touch obj/src
+  tmk
+  expect_failure
+  expect_output "Could not create directory obj/src"
+  [ ! -e bin/app ] || fail "linked without the objects"
+}
+
+################################################################################
 # Parallelism
 ################################################################################
 
@@ -496,8 +542,8 @@ compile_failure_keeps_progress()
   expect_failure
   expect_ran "compile src/main.c" "compile src/util.c"
   [ ! -e bin/app ] || fail "linked despite the compile failure"
-  expect_logged "obj/main.o"
-  expect_not_logged "obj/util.o"
+  expect_logged "obj/src/main.o"
+  expect_not_logged "obj/src/util.o"
 
   set_util 0
   tmk
@@ -609,7 +655,7 @@ unknown_argument()
 log_old_format()
 {
   built_project
-  printf 'clang -c src/main.c -o obj/main.o\n' > .tinymake_log
+  printf 'clang -c src/main.c -o obj/src/main.o\n' > .tinymake_log
   tmk
   expect_success
   expect_ran "compile src/main.c" "compile src/util.c" "link bin/app"
@@ -701,6 +747,9 @@ run binary_deleted
 
 run two_binaries
 run shared_source_edited
+
+run same_name_in_two_directories
+run object_directory_blocked
 
 run default_is_serial
 run jobs_runs_in_parallel_within_the_limit

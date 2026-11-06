@@ -2,8 +2,10 @@
 
 #include "tmk_cmdlog_test.h"
 #include "tmk_depfile_test.h"
+#include "tmk_fs_test.h"
 #include "tmk_log.h"
 #include "tmk_parser_test.h"
+#include "tmk_path_test.h"
 #include "tmk_str_array_test.h"
 #include "tmk_str_test.h"
 
@@ -69,6 +71,7 @@ int main(void)
   RUN(test_parser_valid);
   RUN(test_parser_layout);
   RUN(test_parser_empty_list);
+  RUN(test_parser_output_paths);
   RUN(test_parser_invalid);
   RUN(test_parser_missing_file);
 
@@ -92,6 +95,19 @@ int main(void)
   RUN(test_cmdlog_round_trip);
   RUN(test_cmdlog_round_trip_is_stable);
   RUN(test_cmdlog_free);
+
+  RUN(test_path_get_dir);
+  RUN(test_path_without_ext);
+
+  RUN(test_fs_create_dir);
+  RUN(test_fs_create_dir_nested);
+  RUN(test_fs_create_dir_existing);
+  RUN(test_fs_create_dir_absolute);
+  RUN(test_fs_create_dir_empty);
+  RUN(test_fs_create_dir_file_in_the_way);
+  RUN(test_fs_create_dir_not_allowed);
+  RUN(test_fs_init_work_dirs);
+  RUN(test_fs_is_newer);
 
   printf("All tests passed.\n");
   return 0;

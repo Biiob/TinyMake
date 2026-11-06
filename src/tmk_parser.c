@@ -173,7 +173,6 @@ static void free_target(target* target)
   tmk_str_free(&target->name);
   for (size_t i = 0; i < target->source_files_count; ++i)
   {
-    tmk_str_free(&target->source_files[i].stripped_name);
     tmk_str_free(&target->source_files[i].c_path);
     tmk_str_free(&target->source_files[i].o_path);
     tmk_str_free(&target->source_files[i].d_path);

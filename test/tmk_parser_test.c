@@ -55,9 +55,11 @@ void test_parser_valid(void)
   assert(tmk_str_equal_cstr(&app->name, "bin/app"));
   assert(app->source_files_count == 2);
   assert(tmk_str_equal_cstr(&app->source_files[0].c_path, "src/main.c"));
-  assert(tmk_str_equal_cstr(&app->source_files[0].o_path, "obj/main.o"));
-  assert(tmk_str_equal_cstr(&app->source_files[0].d_path, "obj/main.d"));
+  assert(tmk_str_equal_cstr(&app->source_files[0].o_path, "obj/src/main.o"));
+  assert(tmk_str_equal_cstr(&app->source_files[0].d_path, "obj/src/main.d"));
   assert(tmk_str_equal_cstr(&app->source_files[1].c_path, "src/util.c"));
+  assert(tmk_str_equal_cstr(&app->source_files[1].o_path, "obj/src/util.o"));
+  assert(tmk_str_equal_cstr(&app->source_files[1].d_path, "obj/src/util.d"));
   assert(tmk_str_equal_cstr(&ctx.targets[1].name, "bin/app_test"));
   assert(ctx.targets[1].source_files_count == 1);
 
@@ -93,6 +95,41 @@ void test_parser_empty_list(void)
   free_build_context(&ctx);
 
   check_invalid("cc = gcc\ncflags =\ncflags = -O2\n");
+}
+
+/* Checks the object and depfile paths of the n-th source of target t. */
+static void check_outputs(const target* t, size_t n, const char* o_path,
+                          const char* d_path)
+{
+  assert(tmk_str_equal_cstr(&t->source_files[n].o_path, o_path));
+  assert(tmk_str_equal_cstr(&t->source_files[n].d_path, d_path));
+}
+
+void test_parser_output_paths(void)
+{
+  /* Outputs mirror the source path under obj/, so that two sources with the
+   * same name in different directories do not overwrite each other.
+   */
+  build_context ctx;
+  int rc = parse(
+      "cc = gcc\n"
+      "binary app: main.c src/util.c src/b/util.c src/lib.v2/x.c src/noext\n"
+      "binary app2: src/util.c\n",
+      &ctx);
+  assert(rc == 0);
+
+  target* app = &ctx.targets[0];
+  assert(app->source_files_count == 5);
+  check_outputs(app, 0, "obj/main.o", "obj/main.d");
+  check_outputs(app, 1, "obj/src/util.o", "obj/src/util.d");
+  check_outputs(app, 2, "obj/src/b/util.o", "obj/src/b/util.d");
+  check_outputs(app, 3, "obj/src/lib.v2/x.o", "obj/src/lib.v2/x.d");
+  check_outputs(app, 4, "obj/src/noext.o", "obj/src/noext.d");
+
+  /* A source shared by two binaries has the same outputs in both. */
+  check_outputs(&ctx.targets[1], 0, "obj/src/util.o", "obj/src/util.d");
+
+  free_build_context(&ctx);
 }
 
 void test_parser_invalid(void)

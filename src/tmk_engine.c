@@ -9,6 +9,7 @@
 #include "tmk_fs.h"
 #include "tmk_log.h"
 #include "tmk_mem.h"
+#include "tmk_path.h"
 #include "tmk_runner.h"
 #include "tmk_str.h"
 #include "tmk_str_array.h"
@@ -80,7 +81,7 @@ static bool up_to_date(const tmk_str* output, const tmk_str_array* inputs,
     }
 
     // Input is newer than output
-    if (is_newer(&in_stat, &out_stat))
+    if (tmk_fs_is_newer(&in_stat, &out_stat))
     {
       return false;
     }
@@ -124,6 +125,14 @@ int generate_object_files(build_context* ctx, target* target)
     }
     else
     {
+      tmk_str out_dir = tmk_path_get_dir(&target->source_files[i].o_path);
+      if (!tmk_fs_create_dir(&out_dir))
+      {
+        tmk_str_free(&out_dir);
+        tmk_str_array_free(&inputs);
+        return -1;
+      }
+      tmk_str_free(&out_dir);
       tmk_runner_command cmd = {
           .argv = argv,
           .display = display,

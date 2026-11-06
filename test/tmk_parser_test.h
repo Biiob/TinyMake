@@ -4,6 +4,7 @@
 void test_parser_valid(void);
 void test_parser_layout(void);
 void test_parser_empty_list(void);
+void test_parser_output_paths(void);
 void test_parser_invalid(void);
 void test_parser_missing_file(void);
 

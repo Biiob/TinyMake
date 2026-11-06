@@ -17,7 +17,7 @@ int main(int argc, char* argv[])
     goto exit_error;
   }
 
-  if (create_work_directories() != 0)
+  if (!tmk_fs_init_work_dirs())
   {
     goto exit_error;
   }

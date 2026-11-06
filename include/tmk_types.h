@@ -16,7 +16,6 @@ typedef struct
 
 typedef struct
 {
-  tmk_str stripped_name;
   tmk_str c_path;
   tmk_str o_path;
   tmk_str d_path;
