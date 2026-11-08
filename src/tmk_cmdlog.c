@@ -65,9 +65,9 @@ void tmk_cmdlog_load(tmk_cmdlog* log, const tmk_str* path)
       continue;
     }
 
-    tmk_str_array_push(&log->outputs, tmk_str_substr(&line, 0, pos));
-    tmk_str_array_push(&log->commands,
-                       tmk_str_substr(&line, pos + 1, TMK_STR_NPOS));
+    tmk_array_push(&log->outputs, tmk_str_substr(&line, 0, pos));
+    tmk_array_push(&log->commands,
+                   tmk_str_substr(&line, pos + 1, TMK_STR_NPOS));
   }
 
   if (ferror(f))
@@ -99,8 +99,8 @@ void tmk_cmdlog_record(tmk_cmdlog* log, const tmk_str* output,
     return;
   }
 
-  tmk_str_array_push(&log->outputs, tmk_str_clone(output));
-  tmk_str_array_push(&log->commands, tmk_str_clone(command));
+  tmk_array_push(&log->outputs, tmk_str_clone(output));
+  tmk_array_push(&log->commands, tmk_str_clone(command));
 }
 
 bool tmk_cmdlog_save(const tmk_cmdlog* log, const tmk_str* path)

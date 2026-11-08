@@ -6,4 +6,4 @@ includes = include test
 
 binary tinymake: src/main.c src/tmk_parser.c src/tmk_config.c src/tmk_engine.c src/tmk_log.c src/tmk_str.c src/tmk_mem.c src/tmk_str_array.c src/tmk_depfile.c src/tmk_path.c src/tmk_cli.c src/tmk_cmdlog.c src/tmk_fs.c src/tmk_runner.c
 
-binary tinymake_test: test/test.c test/test_util.c test/tmk_str_test.c test/tmk_depfile_test.c test/tmk_str_array_test.c test/tmk_parser_test.c test/tmk_cmdlog_test.c test/tmk_path_test.c test/tmk_fs_test.c src/tmk_str.c src/tmk_mem.c src/tmk_depfile.c src/tmk_str_array.c src/tmk_parser.c src/tmk_config.c src/tmk_path.c src/tmk_log.c src/tmk_cmdlog.c src/tmk_fs.c
+binary tinymake_test: test/test.c test/test_util.c test/tmk_str_test.c test/tmk_depfile_test.c test/tmk_array_test.c test/tmk_str_array_test.c test/tmk_parser_test.c test/tmk_cmdlog_test.c test/tmk_path_test.c test/tmk_fs_test.c src/tmk_str.c src/tmk_mem.c src/tmk_depfile.c src/tmk_str_array.c src/tmk_parser.c src/tmk_config.c src/tmk_path.c src/tmk_log.c src/tmk_cmdlog.c src/tmk_fs.c

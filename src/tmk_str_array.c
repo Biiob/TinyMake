@@ -1,25 +1,6 @@
 #include "tmk_str_array.h"
 
 #include <assert.h>
-#include <stdlib.h>
-
-#include "tmk_mem.h"
-
-#define TMK_STR_ARRAY_MIN_CAP 8
-
-void tmk_str_array_push(tmk_str_array* arr, tmk_str str)
-{
-  if (arr->len == arr->capacity)
-  {
-    size_t capacity = arr->capacity == 0 ? TMK_STR_ARRAY_MIN_CAP
-                                         : arr->capacity * 2;
-    arr->items = tmk_xrealloc(arr->items, capacity * sizeof(*arr->items));
-    arr->capacity = capacity;
-  }
-
-  arr->items[arr->len] = str;
-  arr->len++;
-}
 
 tmk_str tmk_str_array_take(tmk_str_array* arr, size_t i)
 {
@@ -33,12 +14,7 @@ tmk_str tmk_str_array_take(tmk_str_array* arr, size_t i)
 
 void tmk_str_array_free(tmk_str_array* arr)
 {
-  for (size_t i = 0; i < arr->len; ++i)
-  {
-    tmk_str_free(&arr->items[i]);
-  }
-  free(arr->items);
-  *arr = (tmk_str_array){0};
+  tmk_array_free_with(arr, tmk_str_free);
 }
 
 tmk_str_array tmk_str_tokenize(const tmk_str* str, char delim)
@@ -52,8 +28,7 @@ tmk_str_array tmk_str_tokenize(const tmk_str* str, char delim)
     {
       if (i > start)
       {
-        tmk_str_array_push(&tokens,
-                           tmk_str_from_buf(str->str + start, i - start));
+        tmk_array_push(&tokens, tmk_str_from_buf(str->str + start, i - start));
       }
       start = i + 1;
     }

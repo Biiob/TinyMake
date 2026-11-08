@@ -121,7 +121,7 @@ static bool object_up_to_date(const tmk_source* source, const tmk_str* command,
                   tmk_str_cstr(&source->d_path));
     return false;
   }
-  tmk_str_array_push(&inputs, tmk_str_clone(&source->c_path));
+  tmk_array_push(&inputs, tmk_str_clone(&source->c_path));
 
   bool result = up_to_date(&source->o_path, &inputs, command, cmdlog);
   tmk_str_array_free(&inputs);
@@ -170,7 +170,7 @@ bool tmk_engine_compile(const tmk_config* config, tmk_engine_state* state,
     tmk_str_free(&dir);
 
     cmd.name = tmk_str_clone(&source->c_path);
-    tmk_runner_command_array_push(&commands, cmd);
+    tmk_array_push(&commands, cmd);
   }
 
   if (ok)
@@ -178,7 +178,7 @@ bool tmk_engine_compile(const tmk_config* config, tmk_engine_state* state,
     ok = tmk_runner_run(commands.items, commands.len, state->max_jobs);
     record_succeeded(&state->cmdlog, commands.items, commands.len);
   }
-  tmk_runner_command_array_free(&commands);
+  tmk_array_free_with(&commands, tmk_runner_command_free);
 
   return ok;
 }
@@ -196,7 +196,7 @@ bool tmk_engine_link(const tmk_config* config, tmk_engine_state* state,
   tmk_str_array inputs = {0};
   for (size_t i = 0; i < target->n_sources; ++i)
   {
-    tmk_str_array_push(&inputs, tmk_str_clone(&target->sources[i].o_path));
+    tmk_array_push(&inputs, tmk_str_clone(&target->sources[i].o_path));
   }
 
   bool ok = true;

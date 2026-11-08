@@ -27,7 +27,7 @@ bool tmk_depfile_parse(tmk_str_array* deps, const tmk_str* path)
         continue;
       }
 
-      tmk_str_array_push(deps, tmk_str_array_take(&tokens, i));
+      tmk_array_push(deps, tmk_str_array_take(&tokens, i));
     }
     tmk_str_array_free(&tokens);
   }

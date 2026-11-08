@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "tmk_array.h"
 #include "tmk_str.h"
 
 typedef enum
@@ -31,17 +32,7 @@ typedef struct
 // Frees argv, display and name
 void tmk_runner_command_free(tmk_runner_command* cmd);
 
-typedef struct
-{
-  tmk_runner_command* items;
-  size_t len;
-  size_t capacity;
-} tmk_runner_command_array;
-
-// Takes ownership of cmd
-void tmk_runner_command_array_push(tmk_runner_command_array* arr,
-                                   tmk_runner_command cmd);
-void tmk_runner_command_array_free(tmk_runner_command_array* arr);
+tmk_define_array(tmk_runner_command_array, tmk_runner_command);
 
 // Runs the commands, at most max_jobs at a time, and starts no new one after a
 // failure. Sets the status of every command, and returns false if one failed

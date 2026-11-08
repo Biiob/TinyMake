@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include "tmk_array_test.h"
 #include "tmk_cmdlog_test.h"
 #include "tmk_depfile_test.h"
 #include "tmk_fs_test.h"
@@ -53,9 +54,18 @@ int main(void)
   RUN(test_str_read_line);
   RUN(test_str_zeroed);
 
-  RUN(test_str_array_zeroed);
-  RUN(test_str_array_push);
-  RUN(test_str_array_push_grows);
+  RUN(test_array_zeroed);
+  RUN(test_array_push);
+  RUN(test_array_push_grows);
+  RUN(test_array_push_pointer_elements);
+  RUN(test_array_push_evaluates_item_once);
+  RUN(test_array_macros_are_statements);
+  RUN(test_array_free);
+  RUN(test_array_free_with);
+  RUN(test_array_free_with_empty);
+  RUN(test_array_free_with_indexed_argument);
+
+  RUN(test_str_array_free);
   RUN(test_str_array_take);
   RUN(test_str_tokenize);
 

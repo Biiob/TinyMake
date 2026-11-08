@@ -5,64 +5,30 @@
 
 #include "tmk_str_array_test.h"
 
-void test_str_array_zeroed(void)
+void test_str_array_free(void)
 {
-  // A zeroed array is empty and can be freed, even twice
+  // A zeroed array can be freed
   tmk_str_array arr = {0};
-  assert(arr.len == 0);
-  tmk_str_array_free(&arr);
   tmk_str_array_free(&arr);
   assert(arr.items == NULL);
-}
 
-void test_str_array_push(void)
-{
-  tmk_str_array arr = {0};
-  tmk_str s = tmk_str_from_cstr("hello");
-  char* buf = s.str;
-
-  tmk_str_array_push(&arr, s);
-  assert(arr.len == 1);
-  assert(arr.capacity >= 1);
-  // Moved, not copied
-  assert(arr.items[0].str == buf);
-  assert(tmk_str_equal_cstr(&arr.items[0], "hello"));
-
-  // Freeing the array frees the strings it owns
+  // The strings it owns are freed too: the leak checker fails the test if not
+  tmk_array_push(&arr, tmk_str_from_cstr("first"));
+  tmk_array_push(&arr, tmk_str_from_cstr("second"));
   tmk_str_array_free(&arr);
   assert(arr.items == NULL);
   assert(arr.len == 0);
   assert(arr.capacity == 0);
-}
 
-void test_str_array_push_grows(void)
-{
-  tmk_str_array arr = {0};
-  tmk_str expected = tmk_str_create();
-
-  for (int i = 0; i < 100; ++i)
-  {
-    tmk_str_format(&expected, "item %d", i);
-    tmk_str_array_push(&arr, tmk_str_clone(&expected));
-  }
-
-  assert(arr.len == 100);
-  assert(arr.capacity >= arr.len);
-  for (int i = 0; i < 100; ++i)
-  {
-    tmk_str_format(&expected, "item %d", i);
-    assert(tmk_str_equal(&arr.items[i], &expected));
-  }
-
-  tmk_str_free(&expected);
+  // Freeing twice is safe
   tmk_str_array_free(&arr);
 }
 
 void test_str_array_take(void)
 {
   tmk_str_array arr = {0};
-  tmk_str_array_push(&arr, tmk_str_from_cstr("first"));
-  tmk_str_array_push(&arr, tmk_str_from_cstr("second"));
+  tmk_array_push(&arr, tmk_str_from_cstr("first"));
+  tmk_array_push(&arr, tmk_str_from_cstr("second"));
   char* buf = arr.items[1].str;
 
   tmk_str taken = tmk_str_array_take(&arr, 1);

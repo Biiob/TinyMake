@@ -299,26 +299,3 @@ void tmk_runner_command_free(tmk_runner_command* cmd)
   tmk_str_free(&cmd->display);
   tmk_str_free(&cmd->name);
 }
-
-void tmk_runner_command_array_push(tmk_runner_command_array* arr,
-                                   tmk_runner_command cmd)
-{
-  if (arr->len == arr->capacity)
-  {
-    size_t capacity = arr->capacity == 0 ? 8 : arr->capacity * 2;
-    arr->items = tmk_xrealloc(arr->items, capacity * sizeof(*arr->items));
-    arr->capacity = capacity;
-  }
-
-  arr->items[arr->len++] = cmd;
-}
-
-void tmk_runner_command_array_free(tmk_runner_command_array* arr)
-{
-  for (size_t i = 0; i < arr->len; ++i)
-  {
-    tmk_runner_command_free(&arr->items[i]);
-  }
-  free(arr->items);
-  *arr = (tmk_runner_command_array){0};
-}

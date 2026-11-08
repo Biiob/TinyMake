@@ -108,7 +108,7 @@ static bool parse_list(const parse_state* st, tmk_str_array* tokens,
   {
     tmk_log_debug("%s: %s", tmk_str_cstr(&tokens->items[0]),
                   tmk_str_cstr(&tokens->items[i]));
-    tmk_str_array_push(dst, tmk_str_array_take(tokens, i));
+    tmk_array_push(dst, tmk_str_array_take(tokens, i));
   }
 
   return true;

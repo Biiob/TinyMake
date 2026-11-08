@@ -1,18 +1,11 @@
 #ifndef TMK_STR_ARRAY_H
 #define TMK_STR_ARRAY_H
 
+#include "tmk_array.h"
 #include "tmk_str.h"
 
 // Growable array owning its strings. A zeroed struct is a valid empty array
-typedef struct
-{
-  tmk_str* items;
-  size_t len;
-  size_t capacity;
-} tmk_str_array;
-
-// Takes ownership of str: the caller must not free it afterwards
-void tmk_str_array_push(tmk_str_array* arr, tmk_str str);
+tmk_define_array(tmk_str_array, tmk_str);
 
 // Moves the string at i out of the array, leaving a zeroed string in its slot
 // len is unchanged, and the slot can still be freed safely
