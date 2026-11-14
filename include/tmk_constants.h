@@ -7,7 +7,4 @@
 #define TMK_OBJ_DIR "obj"
 #define TMK_BIN_DIR "bin"
 
-#define TMK_MAX_SOURCES 256
-#define TMK_MAX_TARGETS 8
-
 #endif

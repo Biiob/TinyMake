@@ -20,17 +20,14 @@ typedef struct
   // NULL-terminated. argv[0] is looked up in PATH
   char** argv;
   // Shown with the output of the command when it succeeds
-  tmk_str display;
+  const tmk_str* display;
   // Identifies the command in error messages
-  tmk_str name;
-  // Not used by the runner: lets the caller act on the result
-  const tmk_str* output;
+  const tmk_str* name;
+  // Not used by the runner: lets the caller match the result to its request
+  size_t id;
   // Set by tmk_runner_run
   tmk_runner_status status;
 } tmk_runner_command;
-
-// Frees argv, display and name
-void tmk_runner_command_free(tmk_runner_command* cmd);
 
 tmk_define_array(tmk_runner_command_array, tmk_runner_command);
 

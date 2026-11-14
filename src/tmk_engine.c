@@ -6,212 +6,214 @@
 #include "tmk_cmdlog.h"
 #include "tmk_depfile.h"
 #include "tmk_fs.h"
+#include "tmk_graph.h"
 #include "tmk_log.h"
-#include "tmk_mem.h"
 #include "tmk_path.h"
 #include "tmk_runner.h"
 #include "tmk_str.h"
 #include "tmk_str_array.h"
 
-// The arguments point into config and source, which must outlive the result
-static char** compile_argv(const tmk_config* config, const tmk_source* source)
+// The files node is built from: its inputs in the graph, plus the headers its
+// depfile lists. Returns false if the depfile could not be read
+static bool collect_input_paths(tmk_str_array* paths, const tmk_graph* graph,
+                                const tmk_node* node)
 {
-  // Compiler, flags, "-I <dir>" pairs, 8 fixed arguments and NULL
-  size_t argc = config->compile_flags.len + 2 * config->include_dirs.len + 10;
-  char** argv = tmk_xrealloc(NULL, argc * sizeof(*argv));
-
-  size_t arg = 0;
-  argv[arg++] = config->compiler.str;
-  for (size_t i = 0; i < config->compile_flags.len; ++i)
-  {
-    argv[arg++] = config->compile_flags.items[i].str;
-  }
-  for (size_t i = 0; i < config->include_dirs.len; ++i)
-  {
-    argv[arg++] = "-I";
-    argv[arg++] = config->include_dirs.items[i].str;
-  }
-  argv[arg++] = "-fdiagnostics-color=always";
-  argv[arg++] = "-MMD";
-  argv[arg++] = "-MF";
-  argv[arg++] = source->d_path.str;
-  argv[arg++] = "-c";
-  argv[arg++] = source->c_path.str;
-  argv[arg++] = "-o";
-  argv[arg++] = source->o_path.str;
-  argv[arg] = NULL;
-
-  return argv;
-}
-
-// The arguments point into config and target, which must outlive the result
-static char** link_argv(const tmk_config* config, const tmk_target* target)
-{
-  // Compiler, flags, "-o <path>", objects and NULL
-  size_t argc = config->link_flags.len + target->n_sources + 4;
-  char** argv = tmk_xrealloc(NULL, argc * sizeof(*argv));
-
-  size_t arg = 0;
-  argv[arg++] = config->compiler.str;
-  for (size_t i = 0; i < config->link_flags.len; ++i)
-  {
-    argv[arg++] = config->link_flags.items[i].str;
-  }
-  argv[arg++] = "-o";
-  argv[arg++] = target->path.str;
-  for (size_t i = 0; i < target->n_sources; ++i)
-  {
-    argv[arg++] = target->sources[i].o_path.str;
-  }
-  argv[arg] = NULL;
-
-  return argv;
-}
-
-// The command line as shown to the user and recorded in the command log
-static tmk_str join_argv(char* const* argv)
-{
-  tmk_str line = tmk_str_create();
-  for (size_t i = 0; argv[i] != NULL; ++i)
-  {
-    tmk_str_append_format(&line, i == 0 ? "%s" : " %s", argv[i]);
-  }
-
-  return line;
-}
-
-// output is up to date if it exists, is newer than all of its inputs, and was
-// built by the same command
-static bool up_to_date(const tmk_str* output, const tmk_str_array* inputs,
-                       const tmk_str* command, const tmk_cmdlog* cmdlog)
-{
-  struct stat out_stat;
-  if (stat(tmk_str_cstr(output), &out_stat) != 0)
-  {
-    return false;
-  }
-
-  for (size_t i = 0; i < inputs->len; ++i)
-  {
-    struct stat in_stat;
-    if (stat(tmk_str_cstr(&inputs->items[i]), &in_stat) != 0)
-    {
-      tmk_log_debug("Could not find or access the input file: %s",
-                    tmk_str_cstr(&inputs->items[i]));
-      return false;
-    }
-    if (tmk_fs_is_newer(&in_stat, &out_stat))
-    {
-      return false;
-    }
-  }
-
-  const tmk_str* recorded = tmk_cmdlog_find(cmdlog, output);
-  return recorded != NULL && tmk_str_equal(command, recorded);
-}
-
-// The inputs of an object are its source and the headers its depfile lists
-static bool object_up_to_date(const tmk_source* source, const tmk_str* command,
-                              const tmk_cmdlog* cmdlog)
-{
-  tmk_str_array inputs;
-  if (!tmk_depfile_parse(&inputs, &source->d_path))
+  *paths = (tmk_str_array){0};
+  if (node->depfile_path.len > 0 &&
+      !tmk_depfile_parse(paths, &node->depfile_path))
   {
     tmk_log_debug("Could not read dependency file: %s",
-                  tmk_str_cstr(&source->d_path));
+                  tmk_str_cstr(&node->depfile_path));
     return false;
   }
-  tmk_array_push(&inputs, tmk_str_clone(&source->c_path));
 
-  bool result = up_to_date(&source->o_path, &inputs, command, cmdlog);
-  tmk_str_array_free(&inputs);
+  for (size_t i = 0; i < node->inputs.len; ++i)
+  {
+    tmk_array_push(paths,
+                   tmk_str_clone(&graph->items[node->inputs.items[i]].output));
+  }
 
-  return result;
+  return true;
 }
 
-static void record_succeeded(tmk_cmdlog* cmdlog,
-                             const tmk_runner_command* commands,
-                             size_t n_commands)
+// True if one of paths is missing, or newer than the output
+static bool any_newer(const tmk_str_array* paths, const struct stat* out_stat)
 {
-  for (size_t i = 0; i < n_commands; ++i)
+  for (size_t i = 0; i < paths->len; ++i)
   {
-    if (commands[i].status == TMK_RUNNER_STATUS_SUCCEEDED)
+    struct stat in_stat;
+    if (stat(tmk_str_cstr(&paths->items[i]), &in_stat) != 0)
     {
-      tmk_cmdlog_record(cmdlog, commands[i].output, &commands[i].display);
+      tmk_log_debug("Could not find or access the input file: %s",
+                    tmk_str_cstr(&paths->items[i]));
+      return true;
+    }
+    if (tmk_fs_is_newer(&in_stat, out_stat))
+    {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// The output of node is up to date if it exists, is newer than all of its
+// inputs, and was built by the same command
+static bool up_to_date(const tmk_graph* graph, const tmk_node* node,
+                       const tmk_cmdlog* cmdlog)
+{
+  struct stat out_stat;
+  if (stat(tmk_str_cstr(&node->output), &out_stat) != 0)
+  {
+    return false;
+  }
+
+  tmk_str_array inputs;
+  bool fresh = collect_input_paths(&inputs, graph, node) &&
+               !any_newer(&inputs, &out_stat);
+  tmk_str_array_free(&inputs);
+  if (!fresh)
+  {
+    return false;
+  }
+
+  const tmk_str* recorded = tmk_cmdlog_find(cmdlog, &node->output);
+  return recorded != NULL && tmk_str_equal(&node->command_display, recorded);
+}
+
+// Marks the node done, and makes ready the dependents that were only waiting
+// for it
+static void complete_node(tmk_graph* graph, size_t idx)
+{
+  tmk_node* node = &graph->items[idx];
+  node->status = TMK_NODE_DONE;
+
+  for (size_t i = 0; i < node->dependents.len; ++i)
+  {
+    tmk_node* dependent = &graph->items[node->dependents.items[i]];
+    dependent->n_pending_inputs--;
+    if (dependent->n_pending_inputs == 0 &&
+        dependent->status == TMK_NODE_WAITING)
+    {
+      dependent->status = TMK_NODE_READY;
     }
   }
 }
 
-bool tmk_engine_compile(const tmk_config* config, tmk_engine_state* state,
-                        const tmk_target* target)
+// Fails the node and, transitively, everything that depends on it
+static void fail_node(tmk_graph* graph, size_t idx)
 {
-  tmk_runner_command_array commands = {0};
-  bool ok = true;
-
-  for (size_t i = 0; ok && i < target->n_sources; ++i)
+  tmk_node* node = &graph->items[idx];
+  if (node->status == TMK_NODE_FAILED)
   {
-    const tmk_source* source = &target->sources[i];
-    tmk_runner_command cmd = {
-        .argv = compile_argv(config, source),
-        .output = &source->o_path,
-    };
-    cmd.display = join_argv(cmd.argv);
+    return;
+  }
 
-    if (object_up_to_date(source, &cmd.display, &state->cmdlog))
+  node->status = TMK_NODE_FAILED;
+  for (size_t i = 0; i < node->dependents.len; ++i)
+  {
+    fail_node(graph, node->dependents.items[i]);
+  }
+}
+
+static bool create_output_dir(const tmk_node* node)
+{
+  tmk_str dir = tmk_path_get_dir(&node->output);
+  bool ok = tmk_fs_create_dir(&dir);
+  tmk_str_free(&dir);
+
+  return ok;
+}
+
+// Adds a command to commands for each ready node that is not up to date
+// The others are completed, or failed if their directory cannot be created
+static void collect_ready(tmk_graph* graph, const tmk_cmdlog* cmdlog,
+                          tmk_runner_command_array* commands)
+{
+  for (size_t i = 0; i < graph->len; ++i)
+  {
+    tmk_node* node = &graph->items[i];
+    if (node->status != TMK_NODE_READY)
     {
-      tmk_log_info("Skipping compilation of: %s",
-                   tmk_str_cstr(&source->c_path));
-      tmk_runner_command_free(&cmd);
       continue;
     }
 
-    tmk_str dir = tmk_path_get_dir(&source->o_path);
-    ok = tmk_fs_create_dir(&dir);
-    tmk_str_free(&dir);
+    if (up_to_date(graph, node, cmdlog))
+    {
+      tmk_log_info("Skipping build of: %s", tmk_str_cstr(&node->output));
+      complete_node(graph, i);
+      continue;
+    }
 
-    cmd.name = tmk_str_clone(&source->c_path);
-    tmk_array_push(&commands, cmd);
+    if (!create_output_dir(node))
+    {
+      fail_node(graph, i);
+      continue;
+    }
+
+    tmk_runner_command cmd = {
+        .argv = node->command_argv,
+        .display = &node->command_display,
+        .name = &node->output,
+        .id = i,
+    };
+    tmk_array_push(commands, cmd);
   }
-
-  if (ok)
-  {
-    ok = tmk_runner_run(commands.items, commands.len, state->max_jobs);
-    record_succeeded(&state->cmdlog, commands.items, commands.len);
-  }
-  tmk_array_free_with(&commands, tmk_runner_command_free);
-
-  return ok;
 }
 
-bool tmk_engine_link(const tmk_config* config, tmk_engine_state* state,
-                     const tmk_target* target)
+// Updates the nodes of commands from their result, and records the commands
+// that succeeded. A command that was not run counts as failed
+static void apply_results(tmk_graph* graph, tmk_cmdlog* cmdlog,
+                          const tmk_runner_command_array* commands)
 {
-  tmk_runner_command cmd = {
-      .argv = link_argv(config, target),
-      .name = tmk_str_clone(&target->path),
-      .output = &target->path,
-  };
-  cmd.display = join_argv(cmd.argv);
-
-  tmk_str_array inputs = {0};
-  for (size_t i = 0; i < target->n_sources; ++i)
+  for (size_t i = 0; i < commands->len; ++i)
   {
-    tmk_array_push(&inputs, tmk_str_clone(&target->sources[i].o_path));
+    size_t idx = commands->items[i].id;
+    if (commands->items[i].status == TMK_RUNNER_STATUS_SUCCEEDED)
+    {
+      const tmk_node* node = &graph->items[idx];
+      tmk_cmdlog_record(cmdlog, &node->output, &node->command_display);
+      complete_node(graph, idx);
+    }
+    else
+    {
+      fail_node(graph, idx);
+    }
+  }
+}
+
+static bool has_status(const tmk_graph* graph, tmk_node_status status)
+{
+  for (size_t i = 0; i < graph->len; ++i)
+  {
+    if (graph->items[i].status == status)
+    {
+      return true;
+    }
   }
 
-  bool ok = true;
-  if (up_to_date(&target->path, &inputs, &cmd.display, &state->cmdlog))
+  return false;
+}
+
+// Nodes left to build. Every node ends up done or failed: failing a node
+// fails its dependents, and completing it makes them ready once nothing else
+// is pending
+static bool has_unfinished(const tmk_graph* graph)
+{
+  return has_status(graph, TMK_NODE_READY) ||
+         has_status(graph, TMK_NODE_WAITING);
+}
+
+bool tmk_engine_run(tmk_graph* graph, tmk_engine_state* state)
+{
+  while (has_unfinished(graph))
   {
-    tmk_log_info("Nothing to link. Skipping...");
-  }
-  else
-  {
-    ok = tmk_runner_run(&cmd, 1, state->max_jobs);
-    record_succeeded(&state->cmdlog, &cmd, 1);
+    tmk_runner_command_array commands = {0};
+    collect_ready(graph, &state->cmdlog, &commands);
+    tmk_runner_run(commands.items, commands.len, state->max_jobs);
+    apply_results(graph, &state->cmdlog, &commands);
+    tmk_array_free(&commands);
   }
 
-  tmk_str_array_free(&inputs);
-  tmk_runner_command_free(&cmd);
-
-  return ok;
+  return !has_status(graph, TMK_NODE_FAILED);
 }

@@ -4,6 +4,7 @@
 #include "tmk_cmdlog_test.h"
 #include "tmk_depfile_test.h"
 #include "tmk_fs_test.h"
+#include "tmk_graph_test.h"
 #include "tmk_log.h"
 #include "tmk_parser_test.h"
 #include "tmk_path_test.h"
@@ -80,9 +81,15 @@ int main(void)
   RUN(test_parser_valid);
   RUN(test_parser_layout);
   RUN(test_parser_empty_list);
-  RUN(test_parser_output_paths);
+  RUN(test_parser_many_targets);
   RUN(test_parser_invalid);
   RUN(test_parser_missing_file);
+
+  RUN(test_graph_output_paths);
+  RUN(test_graph_shared_source);
+  RUN(test_graph_edges);
+  RUN(test_graph_initial_status);
+  RUN(test_graph_commands);
 
   RUN(test_cmdlog_load_missing_file);
   RUN(test_cmdlog_load_empty_file);

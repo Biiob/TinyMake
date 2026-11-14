@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 #include "tmk_cmdlog.h"
-#include "tmk_config.h"
+#include "tmk_graph.h"
 
 // What a build needs besides its configuration, and what it changes
 typedef struct
@@ -16,13 +16,8 @@ typedef struct
   size_t max_jobs;
 } tmk_engine_state;
 
-// Compiles the sources of target that are not up to date
+// Builds the nodes of graph that are not up to date, and updates their status
 // Returns false if one of them failed
-bool tmk_engine_compile(const tmk_config* config, tmk_engine_state* state,
-                        const tmk_target* target);
-
-// Links target if it is not up to date. Returns false if linking failed
-bool tmk_engine_link(const tmk_config* config, tmk_engine_state* state,
-                     const tmk_target* target);
+bool tmk_engine_run(tmk_graph* graph, tmk_engine_state* state);
 
 #endif

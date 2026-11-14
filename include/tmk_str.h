@@ -75,12 +75,16 @@ tmk_str* tmk_str_push(tmk_str* dst, char c);
 
 // Format functions return NULL on an encoding error
 // The arguments must not point inside dst
-tmk_str* tmk_str_vappend_format(tmk_str* dst, const char* fmt, va_list args);
-tmk_str* tmk_str_append_format(tmk_str* dst, const char* fmt, ...);
+tmk_str* tmk_str_vappend_format(tmk_str* dst, const char* fmt, va_list args)
+    __attribute__((format(printf, 2, 0)));
+tmk_str* tmk_str_append_format(tmk_str* dst, const char* fmt, ...)
+    __attribute__((format(printf, 2, 3)));
 
 // Same as the append versions, but replaces the content of dst
-tmk_str* tmk_str_vformat(tmk_str* dst, const char* fmt, va_list args);
-tmk_str* tmk_str_format(tmk_str* dst, const char* fmt, ...);
+tmk_str* tmk_str_vformat(tmk_str* dst, const char* fmt, va_list args)
+    __attribute__((format(printf, 2, 0)));
+tmk_str* tmk_str_format(tmk_str* dst, const char* fmt, ...)
+    __attribute__((format(printf, 2, 3)));
 
 // Removes leading and trailing whitespace, in place
 tmk_str* tmk_str_trim(tmk_str* str);

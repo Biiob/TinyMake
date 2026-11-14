@@ -119,8 +119,9 @@ static bool start_job(job* j, int* fd)
 
   if (err != 0)
   {
-    tmk_log_error("%s: could not start %s: %s", tmk_str_cstr(&j->command->name),
-                  j->command->argv[0], strerror(err));
+    tmk_log_error("%s: could not start %s: %s",
+                  tmk_str_cstr(j->command->name), j->command->argv[0],
+                  strerror(err));
     close(pipes[0]);
     return false;
   }
@@ -134,7 +135,7 @@ static bool start_job(job* j, int* fd)
 // Returns false if the process could not be waited for
 static bool finish_job(job* j)
 {
-  const char* name = tmk_str_cstr(&j->command->name);
+  const char* name = tmk_str_cstr(j->command->name);
   const char* output = tmk_str_cstr(&j->output);
   int detail;
   child_result result = wait_child(j->pid, &detail);
@@ -143,7 +144,7 @@ static bool finish_job(job* j)
   switch (result)
   {
     case CHILD_OK:
-      tmk_log_info("%s\n%s", tmk_str_cstr(&j->command->display), output);
+      tmk_log_info("%s\n%s", tmk_str_cstr(j->command->display), output);
       break;
     case CHILD_EXIT_FAILURE:
       tmk_log_error("\n%s", output);
@@ -291,11 +292,4 @@ abort:
   free(pfds);
 
   return false;
-}
-
-void tmk_runner_command_free(tmk_runner_command* cmd)
-{
-  free(cmd->argv);
-  tmk_str_free(&cmd->display);
-  tmk_str_free(&cmd->name);
 }

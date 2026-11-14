@@ -4,9 +4,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "tmk_constants.h"
+#include "tmk_array.h"
 #include "tmk_log.h"
-#include "tmk_str.h"
 #include "tmk_str_array.h"
 
 typedef struct
@@ -133,40 +132,28 @@ static bool parse_binary(tmk_config* config, const parse_state* st,
     return parse_error(st, "binary '%s' has no source files",
                        tmk_str_cstr(name));
   }
-  if (n_sources > TMK_MAX_SOURCES)
-  {
-    return parse_error(st, "binary '%s' has too many source files (max %d)",
-                       tmk_str_cstr(name), TMK_MAX_SOURCES);
-  }
-  if (config->n_targets == TMK_MAX_TARGETS)
-  {
-    return parse_error(st, "too many targets (max %d)", TMK_MAX_TARGETS);
-  }
 
-  tmk_str path = tmk_str_from_cstr(TMK_BIN_DIR);
-  tmk_str_append_format(&path, "/%s", tmk_str_cstr(name));
-
-  for (size_t i = 0; i < config->n_targets; ++i)
+  for (size_t i = 0; i < config->targets.len; ++i)
   {
-    if (tmk_str_equal(&config->targets[i].path, &path))
+    if (tmk_str_equal(&config->targets.items[i].name, name))
     {
-      tmk_str_free(&path);
       return parse_error(st, "binary '%s' already defined", tmk_str_cstr(name));
     }
   }
 
-  tmk_target* target = &config->targets[config->n_targets++];
-  target->type = TMK_TARGET_BINARY;
-  target->path = path;
-  target->n_sources = 0;
-  tmk_log_debug("Found target %s with %zu sources", tmk_str_cstr(&path),
+  tmk_target target = {0};
+  target.type = TMK_TARGET_BINARY;
+  target.name = tmk_str_clone(name);
+  target.line_no = st->line_no;
+  tmk_log_debug("Found binary %s with %zu sources", tmk_str_cstr(name),
                 n_sources);
 
   for (size_t i = 2; i < tokens->len; ++i)
   {
-    target->sources[target->n_sources++] =
-        tmk_source_create(tmk_str_array_take(tokens, i));
+    tmk_array_push(&target.sources, tmk_str_array_take(tokens, i));
   }
+
+  tmk_array_push(&config->targets, target);
 
   return true;
 }

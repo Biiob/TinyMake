@@ -49,19 +49,21 @@ void test_parser_valid(void)
   assert(tmk_str_equal_cstr(&config.include_dirs.items[0], "include"));
   assert(tmk_str_equal_cstr(&config.include_dirs.items[1], "test"));
 
-  assert(config.n_targets == 2);
-  tmk_target* app = &config.targets[0];
+  assert(config.targets.len == 2);
+  tmk_target* app = &config.targets.items[0];
   assert(app->type == TMK_TARGET_BINARY);
-  assert(tmk_str_equal_cstr(&app->path, "bin/app"));
-  assert(app->n_sources == 2);
-  assert(tmk_str_equal_cstr(&app->sources[0].c_path, "src/main.c"));
-  assert(tmk_str_equal_cstr(&app->sources[0].o_path, "obj/src/main.o"));
-  assert(tmk_str_equal_cstr(&app->sources[0].d_path, "obj/src/main.d"));
-  assert(tmk_str_equal_cstr(&app->sources[1].c_path, "src/util.c"));
-  assert(tmk_str_equal_cstr(&app->sources[1].o_path, "obj/src/util.o"));
-  assert(tmk_str_equal_cstr(&app->sources[1].d_path, "obj/src/util.d"));
-  assert(tmk_str_equal_cstr(&config.targets[1].path, "bin/app_test"));
-  assert(config.targets[1].n_sources == 1);
+  assert(tmk_str_equal_cstr(&app->name, "app"));
+  assert(app->line_no == 6);
+  assert(app->sources.len == 2);
+  assert(tmk_str_equal_cstr(&app->sources.items[0], "src/main.c"));
+  assert(tmk_str_equal_cstr(&app->sources.items[1], "src/util.c"));
+  assert(app->deps.len == 0);
+
+  tmk_target* app_test = &config.targets.items[1];
+  assert(tmk_str_equal_cstr(&app_test->name, "app_test"));
+  assert(app_test->line_no == 7);
+  assert(app_test->sources.len == 1);
+  assert(tmk_str_equal_cstr(&app_test->sources.items[0], "test/test.c"));
 
   tmk_config_free(&config);
 }
@@ -80,8 +82,10 @@ void test_parser_layout(void)
       &config);
   assert(ok);
   assert(tmk_str_equal_cstr(&config.compiler, "clang"));
-  assert(config.n_targets == 1);
-  assert(tmk_str_equal_cstr(&config.targets[0].path, "bin/app"));
+  assert(config.targets.len == 1);
+  assert(tmk_str_equal_cstr(&config.targets.items[0].name, "app"));
+  assert(config.targets.items[0].line_no == 6);
+  assert(config.targets.items[0].sources.len == 1);
 
   tmk_config_free(&config);
 }
@@ -97,38 +101,23 @@ void test_parser_empty_list(void)
   check_invalid("cc = gcc\ncflags =\ncflags = -O2\n");
 }
 
-// Checks the object and depfile paths of the n-th source of target t
-static void check_outputs(const tmk_target* t, size_t n, const char* o_path,
-                          const char* d_path)
+void test_parser_many_targets(void)
 {
-  assert(tmk_str_equal_cstr(&t->sources[n].o_path, o_path));
-  assert(tmk_str_equal_cstr(&t->sources[n].d_path, d_path));
-}
+  // Targets are kept in a growable array: there is no maximum
+  tmk_str content = tmk_str_from_cstr("cc = gcc\n");
+  for (int i = 1; i <= 20; ++i)
+  {
+    tmk_str_append_format(&content, "binary a%d: a.c\n", i);
+  }
 
-void test_parser_output_paths(void)
-{
-  // Outputs mirror the source path under obj/, so that two sources with the
-  // same name in different directories do not overwrite each other
   tmk_config config;
-  bool ok = parse(
-      "cc = gcc\n"
-      "binary app: main.c src/util.c src/b/util.c src/lib.v2/x.c src/noext\n"
-      "binary app2: src/util.c\n",
-      &config);
-  assert(ok);
-
-  tmk_target* app = &config.targets[0];
-  assert(app->n_sources == 5);
-  check_outputs(app, 0, "obj/main.o", "obj/main.d");
-  check_outputs(app, 1, "obj/src/util.o", "obj/src/util.d");
-  check_outputs(app, 2, "obj/src/b/util.o", "obj/src/b/util.d");
-  check_outputs(app, 3, "obj/src/lib.v2/x.o", "obj/src/lib.v2/x.d");
-  check_outputs(app, 4, "obj/src/noext.o", "obj/src/noext.d");
-
-  // A source shared by two binaries has the same outputs in both
-  check_outputs(&config.targets[1], 0, "obj/src/util.o", "obj/src/util.d");
+  assert(parse(tmk_str_cstr(&content), &config));
+  assert(config.targets.len == 20);
+  assert(tmk_str_equal_cstr(&config.targets.items[19].name, "a20"));
+  assert(config.targets.items[19].line_no == 21);
 
   tmk_config_free(&config);
+  tmk_str_free(&content);
 }
 
 void test_parser_invalid(void)
@@ -153,13 +142,6 @@ void test_parser_invalid(void)
   check_invalid("cc = gcc\nbinary app src/main.c\n");
   check_invalid("cc = gcc\nbinary :\n");
   check_invalid("cc = gcc\nbinary app:\n");
-
-  // Too many targets: the 9th one is rejected
-  check_invalid(
-      "cc = gcc\n"
-      "binary a1: a.c\nbinary a2: a.c\nbinary a3: a.c\n"
-      "binary a4: a.c\nbinary a5: a.c\nbinary a6: a.c\n"
-      "binary a7: a.c\nbinary a8: a.c\nbinary a9: a.c\n");
 
   // Unknown key, including a typo
   check_invalid("cc = gcc\ncflag = -Wall\n");

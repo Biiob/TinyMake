@@ -4,6 +4,7 @@
 #include "tmk_constants.h"
 #include "tmk_engine.h"
 #include "tmk_fs.h"
+#include "tmk_graph.h"
 #include "tmk_log.h"
 #include "tmk_parser.h"
 #include "tmk_str.h"
@@ -28,19 +29,16 @@ int main(int argc, char* argv[])
   bool ok = tmk_parser_parse(&config, &build_file_path);
   tmk_str_free(&build_file_path);
 
-  for (size_t i = 0; ok && i < config.n_targets; ++i)
-  {
-    const tmk_target* target = &config.targets[i];
-    tmk_log_info("Building target: %s", tmk_str_cstr(&target->path));
-    ok = tmk_engine_compile(&config, &state, target) &&
-         tmk_engine_link(&config, &state, target);
-  }
+  tmk_graph graph = {0};
+  ok = ok && tmk_graph_build(&graph, &config);
+  ok = ok && tmk_engine_run(&graph, &state);
 
   if (!tmk_cmdlog_save(&state.cmdlog, &cmdlog_path))
   {
     tmk_log_warn("Command log file was not updated");
   }
   tmk_str_free(&cmdlog_path);
+  tmk_graph_free(&graph);
   tmk_cmdlog_free(&state.cmdlog);
   tmk_config_free(&config);
 
