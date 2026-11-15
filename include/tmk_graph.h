@@ -12,14 +12,10 @@ tmk_define_array(tmk_index_array, size_t);
 
 typedef enum
 {
-  // Some inputs are not built yet
   TMK_NODE_WAITING,
-  // All inputs are built: can be checked, then built if needed
   TMK_NODE_READY,
   TMK_NODE_RUNNING,
-  // Built, up to date, or a source file
   TMK_NODE_DONE,
-  // Its command failed, or one of its inputs did
   TMK_NODE_FAILED
 } tmk_node_status;
 
@@ -38,7 +34,7 @@ typedef struct
   // Empty if the command writes no depfile
   tmk_str depfile_path;
   tmk_node_status status;
-  // Inputs that are not done yet: the node is ready when this reaches 0
+  // Inputs that are not done yet
   size_t n_pending_inputs;
 } tmk_node;
 

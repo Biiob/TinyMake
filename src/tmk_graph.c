@@ -190,7 +190,6 @@ bool tmk_graph_build(tmk_graph* graph, const tmk_config* config)
     add_binary(graph, config, &config->targets.items[i]);
   }
 
-  // Nodes to build can start once nothing they need is left to build
   for (size_t i = 0; i < graph->len; ++i)
   {
     tmk_node* node = &graph->items[i];

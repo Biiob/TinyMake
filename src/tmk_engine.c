@@ -1,6 +1,6 @@
 #include "tmk_engine.h"
 
-#include <stdlib.h>
+#include <assert.h>
 #include <sys/stat.h>
 
 #include "tmk_cmdlog.h"
@@ -12,6 +12,17 @@
 #include "tmk_runner.h"
 #include "tmk_str.h"
 #include "tmk_str_array.h"
+
+typedef struct
+{
+  tmk_graph* graph;
+  tmk_cmdlog* cmdlog;
+  // Nodes to check then build
+  tmk_index_array queue;
+  size_t head;
+  // Set by the first failure: no new node is started afterwards
+  bool stopping;
+} build;
 
 // The files node is built from: its inputs in the graph, plus the headers its
 // depfile lists. Returns false if the depfile could not be read
@@ -81,29 +92,32 @@ static bool up_to_date(const tmk_graph* graph, const tmk_node* node,
   return recorded != NULL && tmk_str_equal(&node->command_display, recorded);
 }
 
-// Marks the node done, and makes ready the dependents that were only waiting
-// for it
-static void complete_node(tmk_graph* graph, size_t idx)
+// Marks the node done, and queues the dependents that were only waiting for it
+static void complete_node(build* b, size_t idx)
 {
-  tmk_node* node = &graph->items[idx];
+  tmk_node* node = &b->graph->items[idx];
   node->status = TMK_NODE_DONE;
 
   for (size_t i = 0; i < node->dependents.len; ++i)
   {
-    tmk_node* dependent = &graph->items[node->dependents.items[i]];
+    size_t dependent_idx = node->dependents.items[i];
+    tmk_node* dependent = &b->graph->items[dependent_idx];
     dependent->n_pending_inputs--;
     if (dependent->n_pending_inputs == 0 &&
         dependent->status == TMK_NODE_WAITING)
     {
       dependent->status = TMK_NODE_READY;
+      tmk_array_push(&b->queue, dependent_idx);
     }
   }
 }
 
 // Fails the node and, transitively, everything that depends on it
-static void fail_node(tmk_graph* graph, size_t idx)
+static void fail_node(build* b, size_t idx)
 {
-  tmk_node* node = &graph->items[idx];
+  b->stopping = true;
+
+  tmk_node* node = &b->graph->items[idx];
   if (node->status == TMK_NODE_FAILED)
   {
     return;
@@ -112,7 +126,7 @@ static void fail_node(tmk_graph* graph, size_t idx)
   node->status = TMK_NODE_FAILED;
   for (size_t i = 0; i < node->dependents.len; ++i)
   {
-    fail_node(graph, node->dependents.items[i]);
+    fail_node(b, node->dependents.items[i]);
   }
 }
 
@@ -125,60 +139,55 @@ static bool create_output_dir(const tmk_node* node)
   return ok;
 }
 
-// Adds a command to commands for each ready node that is not up to date
-// The others are completed, or failed if their directory cannot be created
-static void collect_ready(tmk_graph* graph, const tmk_cmdlog* cmdlog,
-                          tmk_runner_command_array* commands)
+static bool start_node(tmk_runner* runner, const tmk_node* node, size_t idx)
 {
-  for (size_t i = 0; i < graph->len; ++i)
-  {
-    tmk_node* node = &graph->items[i];
-    if (node->status != TMK_NODE_READY)
-    {
-      continue;
-    }
+  tmk_runner_command cmd = {
+      .argv = node->command_argv,
+      .display = &node->command_display,
+      .name = &node->output,
+      .id = idx,
+  };
 
-    if (up_to_date(graph, node, cmdlog))
-    {
-      tmk_log_info("Skipping build of: %s", tmk_str_cstr(&node->output));
-      complete_node(graph, i);
-      continue;
-    }
-
-    if (!create_output_dir(node))
-    {
-      fail_node(graph, i);
-      continue;
-    }
-
-    tmk_runner_command cmd = {
-        .argv = node->command_argv,
-        .display = &node->command_display,
-        .name = &node->output,
-        .id = i,
-    };
-    tmk_array_push(commands, cmd);
-  }
+  return create_output_dir(node) && tmk_runner_start(runner, &cmd);
 }
 
-// Updates the nodes of commands from their result, and records the commands
-// that succeeded. A command that was not run counts as failed
-static void apply_results(tmk_graph* graph, tmk_cmdlog* cmdlog,
-                          const tmk_runner_command_array* commands)
+// Takes nodes from the queue while the runner has room: completes the ones
+// that are up to date, and starts the others
+static void start_ready(build* b, tmk_runner* runner)
 {
-  for (size_t i = 0; i < commands->len; ++i)
+  while (!b->stopping && !tmk_runner_is_full(runner) && b->head < b->queue.len)
   {
-    size_t idx = commands->items[i].id;
-    if (commands->items[i].status == TMK_RUNNER_STATUS_SUCCEEDED)
+    size_t idx = b->queue.items[b->head++];
+    tmk_node* node = &b->graph->items[idx];
+
+    if (up_to_date(b->graph, node, b->cmdlog))
     {
-      const tmk_node* node = &graph->items[idx];
-      tmk_cmdlog_record(cmdlog, &node->output, &node->command_display);
-      complete_node(graph, idx);
+      tmk_log_info("Skipping build of: %s", tmk_str_cstr(&node->output));
+      complete_node(b, idx);
+    }
+    else if (start_node(runner, node, idx))
+    {
+      node->status = TMK_NODE_RUNNING;
     }
     else
     {
-      fail_node(graph, idx);
+      fail_node(b, idx);
     }
+  }
+}
+
+// Records the command of a node that succeeded, and completes or fails it
+static void apply_result(build* b, const tmk_runner_result* result)
+{
+  if (result->status == TMK_RUNNER_STATUS_SUCCEEDED)
+  {
+    const tmk_node* node = &b->graph->items[result->id];
+    tmk_cmdlog_record(b->cmdlog, &node->output, &node->command_display);
+    complete_node(b, result->id);
+  }
+  else
+  {
+    fail_node(b, result->id);
   }
 }
 
@@ -195,25 +204,50 @@ static bool has_status(const tmk_graph* graph, tmk_node_status status)
   return false;
 }
 
-// Nodes left to build. Every node ends up done or failed: failing a node
-// fails its dependents, and completing it makes them ready once nothing else
-// is pending
-static bool has_unfinished(const tmk_graph* graph)
-{
-  return has_status(graph, TMK_NODE_READY) ||
-         has_status(graph, TMK_NODE_WAITING);
-}
-
 bool tmk_engine_run(tmk_graph* graph, tmk_engine_state* state)
 {
-  while (has_unfinished(graph))
+  build b = {.graph = graph, .cmdlog = &state->cmdlog};
+  for (size_t i = 0; i < graph->len; ++i)
   {
-    tmk_runner_command_array commands = {0};
-    collect_ready(graph, &state->cmdlog, &commands);
-    tmk_runner_run(commands.items, commands.len, state->max_jobs);
-    apply_results(graph, &state->cmdlog, &commands);
-    tmk_array_free(&commands);
+    if (graph->items[i].status == TMK_NODE_READY)
+    {
+      tmk_array_push(&b.queue, i);
+    }
   }
+
+  tmk_runner runner;
+  tmk_runner_init(&runner, state->max_jobs);
+
+  // After a failure, nothing new starts but what runs is still waited for
+  for (;;)
+  {
+    start_ready(&b, &runner);
+    if (tmk_runner_n_running(&runner) == 0)
+    {
+      break;
+    }
+
+    tmk_runner_result result;
+    if (!tmk_runner_wait_any(&runner, &result))
+    {
+      break;
+    }
+    apply_result(&b, &result);
+  }
+
+  // Only left running if waiting failed: their results are unknown
+  for (size_t i = 0; i < graph->len; ++i)
+  {
+    if (graph->items[i].status == TMK_NODE_RUNNING)
+    {
+      fail_node(&b, i);
+    }
+  }
+  tmk_runner_free(&runner);
+  tmk_array_free(&b.queue);
+
+  assert(b.stopping || !has_status(graph, TMK_NODE_WAITING));
+  assert(b.stopping || !has_status(graph, TMK_NODE_READY));
 
   return !has_status(graph, TMK_NODE_FAILED);
 }

@@ -28,7 +28,8 @@ N_FAILED=0
 
 # Records "compile <source>" or "link <output>" in calls.log, in the project.
 # If track_jobs exists, compiling also lasts a bit longer and appends the number
-# of compilers running at that moment to jobs.log
+# of compilers running at that moment to jobs.log. Sources named *slow* take a
+# second longer to compile
 cat > "$ROOT/cc" <<'EOF'
 #!/bin/sh
 prev=""
@@ -47,6 +48,9 @@ if [ -n "$source" ]; then
     sleep 0.3
     rm -f "running.$$"
   fi
+  case "$source" in
+    *slow*) sleep 1 ;;
+  esac
 else
   echo "link $output" >> calls.log
 fi
@@ -530,6 +534,22 @@ jobs_runs_in_parallel_within_the_limit()
   [ "$(max_jobs)" -le 3 ] || fail "ran $(max_jobs) compilers at once with -j 3"
 }
 
+# A slow compilation must not hold back the link of another binary, whose
+# objects are ready
+link_does_not_wait_for_slow_compile()
+{
+  mkdir src
+  echo 'int main(void) { return 0; }' > src/slow.c
+  echo 'int main(void) { return 0; }' > src/fast.c
+  write_build_file "binary slow: src/slow.c" "binary fast: src/fast.c"
+  tmk -j 2
+  expect_success
+  expect_ran "compile src/slow.c" "compile src/fast.c" \
+             "link bin/slow" "link bin/fast"
+  [ bin/fast -ot obj/src/slow.o ] ||
+    fail "bin/fast was linked only once src/slow.c had compiled"
+}
+
 ################################################################################
 # Failures
 ################################################################################
@@ -753,6 +773,7 @@ run object_directory_blocked
 
 run default_is_serial
 run jobs_runs_in_parallel_within_the_limit
+run link_does_not_wait_for_slow_compile
 
 run compile_failure_keeps_progress
 run compile_failure_parallel

@@ -6,13 +6,10 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "tmk_array.h"
 #include "tmk_str.h"
 
 typedef enum
 {
-  // Not started, because an earlier command failed
-  TMK_RUNNER_STATUS_NOT_RUN,
   TMK_RUNNER_STATUS_SUCCEEDED,
   TMK_RUNNER_STATUS_FAILED
 } tmk_runner_status;
@@ -27,11 +24,7 @@ typedef struct
   const tmk_str* name;
   // Not used by the runner: lets the caller match the result to its request
   size_t id;
-  // Set by tmk_runner_run
-  tmk_runner_status status;
 } tmk_runner_command;
-
-tmk_define_array(tmk_runner_command_array, tmk_runner_command);
 
 // The fields of the two types below are private to the runner
 
@@ -50,7 +43,6 @@ typedef struct
   tmk_str output;
 } tmk_runner_job;
 
-// Runs commands as separate processes, a fixed number at most at a time
 typedef struct
 {
   // One slot per job that can run at the same time
@@ -65,7 +57,6 @@ typedef struct
 {
   // The id of the command
   size_t id;
-  // SUCCEEDED or FAILED
   tmk_runner_status status;
 } tmk_runner_result;
 
@@ -81,17 +72,10 @@ size_t tmk_runner_n_running(const tmk_runner* r);
 bool tmk_runner_start(tmk_runner* r, const tmk_runner_command* cmd);
 
 // Waits until one of the running commands ends, and reports its result
-// Returns false if nothing is running, or if waiting failed (then logged): the
-// results of the commands still running are unknown
+// Returns false if nothing is running, or if waiting failed
 bool tmk_runner_wait_any(tmk_runner* r, tmk_runner_result* result);
 
-// Waits for the commands still running, so that no process is left behind,
-// and ignores their result
+// Waits for the commands still running, so that no process is left behind
 void tmk_runner_free(tmk_runner* r);
-
-// Runs the commands, at most max_jobs at a time, and starts no new one after a
-// failure. Sets the status of every command, and returns false if one failed
-bool tmk_runner_run(tmk_runner_command* commands, size_t n_commands,
-                    size_t max_jobs);
 
 #endif

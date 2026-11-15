@@ -7,12 +7,9 @@
 #include "tmk_cmdlog.h"
 #include "tmk_graph.h"
 
-// What a build needs besides its configuration, and what it changes
 typedef struct
 {
-  // Gets the commands that succeeded, even when the build fails
   tmk_cmdlog cmdlog;
-  // At least 1
   size_t max_jobs;
 } tmk_engine_state;
 

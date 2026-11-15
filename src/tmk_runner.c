@@ -66,8 +66,6 @@ static bool start_job(tmk_runner_job* j, int* fd)
     return false;
   }
 
-  // Otherwise the next children would inherit the pipe, and keep it open after
-  // this command exits
   if (fcntl(pipes[0], F_SETFD, FD_CLOEXEC) != 0 ||
       fcntl(pipes[1], F_SETFD, FD_CLOEXEC) != 0)
   {
@@ -270,64 +268,4 @@ void tmk_runner_free(tmk_runner* r)
   free(r->jobs);
   free(r->pfds);
   *r = (tmk_runner){0};
-}
-
-bool tmk_runner_run(tmk_runner_command* commands, size_t n_commands,
-                    size_t max_jobs)
-{
-  for (size_t i = 0; i < n_commands; ++i)
-  {
-    commands[i].status = TMK_RUNNER_STATUS_NOT_RUN;
-  }
-
-  tmk_runner r;
-  tmk_runner_init(&r, max_jobs);
-
-  // Commands start in order, so the ones from next on have not started
-  size_t next = 0;
-  bool failed = false;
-  bool wait_ok = true;
-
-  while (wait_ok)
-  {
-    while (!failed && !tmk_runner_is_full(&r) && next < n_commands)
-    {
-      tmk_runner_command cmd = commands[next];
-      cmd.id = next;
-      if (!tmk_runner_start(&r, &cmd))
-      {
-        commands[next].status = TMK_RUNNER_STATUS_FAILED;
-        failed = true;
-      }
-      next++;
-    }
-
-    if (tmk_runner_n_running(&r) == 0)
-    {
-      break;
-    }
-
-    tmk_runner_result result;
-    wait_ok = tmk_runner_wait_any(&r, &result);
-    if (wait_ok)
-    {
-      commands[result.id].status = result.status;
-      failed = failed || result.status == TMK_RUNNER_STATUS_FAILED;
-    }
-  }
-
-  if (!wait_ok)
-  {
-    // The results of the commands that had started are unknown
-    for (size_t i = 0; i < next; ++i)
-    {
-      if (commands[i].status == TMK_RUNNER_STATUS_NOT_RUN)
-      {
-        commands[i].status = TMK_RUNNER_STATUS_FAILED;
-      }
-    }
-  }
-  tmk_runner_free(&r);
-
-  return wait_ok && !failed;
 }
