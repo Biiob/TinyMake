@@ -6,11 +6,13 @@
 #
 # filter only runs the scenarios whose name contains it.
 #
-# Compiler calls go through a wrapper that records them, so the checks are about
-# what was actually run rather than about the wording of the log messages.
+# Compiler and archiver calls go through wrappers that record them, so the
+# checks are about what was actually run rather than about the wording of the
+# log messages.
 #
 # Environment:
 #   CC           Real compiler (default: clang)
+#   AR           Real archiver (default: ar)
 #   E2E_TIMEOUT  Seconds before a build counts as hung (default: 20)
 
 if [ $# -lt 1 ] || [ ! -x "$1" ]; then
@@ -21,6 +23,7 @@ fi
 TMK=$(realpath "$1")
 FILTER=${2:-}
 export REAL_CC=${CC:-clang}
+export REAL_AR=${AR:-ar}
 E2E_TIMEOUT=${E2E_TIMEOUT:-20}
 ROOT=$(mktemp -d /tmp/tmk_e2e_XXXXXX)
 N_PASSED=0
@@ -58,6 +61,14 @@ exec "$REAL_CC" "$@"
 EOF
 chmod +x "$ROOT/cc"
 
+# Records "archive <library>" in calls.log. Called as "ar rcs <library> ..."
+cat > "$ROOT/ar" <<'EOF'
+#!/bin/sh
+echo "archive $2" >> calls.log
+exec "$REAL_AR" "$@"
+EOF
+chmod +x "$ROOT/ar"
+
 ################################################################################
 # Helpers. fail exits the subshell the scenario runs in.
 ################################################################################
@@ -89,6 +100,7 @@ write_build_file()
 {
   {
     echo "cc = $ROOT/cc"
+    echo "ar = $ROOT/ar"
     echo "cflags = ${CFLAGS_VALUE:--O0}"
     [ -n "${LDFLAGS_VALUE:-}" ] && echo "ldflags = $LDFLAGS_VALUE"
     echo "includes = src"
@@ -179,6 +191,9 @@ age_all()
 {
   find src -type f -exec touch -d "2020-01-01 00:00:00" {} +
   find obj -type f -exec touch -d "2020-01-01 01:00:00" {} +
+  if [ -d lib ]; then
+    find lib -type f -exec touch -d "2020-01-01 01:30:00" {} +
+  fi
   find bin -type f -exec touch -d "2020-01-01 02:00:00" {} +
 }
 
@@ -464,6 +479,178 @@ shared_source_edited()
   expect_exit_value bin/app2 7
   tmk
   expect_nothing_ran
+}
+
+################################################################################
+# Libraries
+################################################################################
+
+# main.c calls util(), which is in the library util
+new_library_project()
+{
+  mkdir src
+  printf 'int util(void);\nint main(void) { return util(); }\n' > src/main.c
+  set_util 0
+  write_build_file "library util: src/util.c" "binary app: src/main.c | util"
+}
+
+library_first_build()
+{
+  new_library_project
+  tmk
+  expect_success
+  expect_ran "compile src/main.c" "compile src/util.c" \
+             "archive lib/libutil.a" "link bin/app"
+  expect_exit_value bin/app 0
+  expect_logged "lib/libutil.a"
+  tmk
+  expect_success
+  expect_nothing_ran
+}
+
+library_source_edited()
+{
+  new_library_project
+  tmk
+  expect_success
+  age_all
+  set_util 4
+  tmk
+  expect_success
+  expect_ran "compile src/util.c" "archive lib/libutil.a" "link bin/app"
+  expect_exit_value bin/app 4
+}
+
+library_used_by_two_binaries()
+{
+  new_library_project
+  write_build_file "library util: src/util.c" \
+                   "binary app: src/main.c | util" \
+                   "binary app2: src/main.c | util"
+  tmk
+  expect_success
+  expect_ran "compile src/main.c" "compile src/util.c" \
+             "archive lib/libutil.a" "link bin/app" "link bin/app2"
+  age_all
+  set_util 5
+  tmk
+  expect_success
+  expect_ran "compile src/util.c" "archive lib/libutil.a" \
+             "link bin/app" "link bin/app2"
+  expect_exit_value bin/app2 5
+}
+
+# app only names net, which needs core: linking fails unless core is linked
+# too, after net. The libraries are declared after their users on purpose
+new_layered_project()
+{
+  mkdir src
+  printf 'int net(void);\nint main(void) { return net(); }\n' > src/main.c
+  printf 'int core(void);\nint net(void) { return core() + 1; }\n' > src/net.c
+  echo 'int core(void) { return 2; }' > src/core.c
+  write_build_file "binary app: src/main.c | net" \
+                   "library net: src/net.c | core" \
+                   "library core: src/core.c"
+}
+
+library_depending_on_library()
+{
+  new_layered_project
+  tmk
+  expect_success
+  expect_ran "compile src/main.c" "compile src/net.c" "compile src/core.c" \
+             "archive lib/libnet.a" "archive lib/libcore.a" "link bin/app"
+  expect_exit_value bin/app 3
+
+  # A change deep down relinks what uses it, even indirectly
+  age_all
+  echo 'int core(void) { return 5; }' > src/core.c
+  tmk
+  expect_success
+  expect_ran "compile src/core.c" "archive lib/libcore.a" "link bin/app"
+  expect_exit_value bin/app 6
+}
+
+library_depending_on_library_parallel()
+{
+  new_layered_project
+  tmk -j 4
+  expect_success
+  expect_exit_value bin/app 3
+  tmk -j 4
+  expect_nothing_ran
+}
+
+# ar only adds to an existing archive: the old member must not stay
+library_source_removed()
+{
+  new_library_project
+  echo 'int extra(void) { return 1; }' > src/extra.c
+  write_build_file "library util: src/util.c src/extra.c" \
+                   "binary app: src/main.c | util"
+  tmk
+  expect_success
+  "$REAL_AR" t lib/libutil.a | grep -q 'extra.o' ||
+    fail "extra.o was not archived in the first place"
+
+  write_build_file "library util: src/util.c" "binary app: src/main.c | util"
+  tmk
+  expect_success
+  expect_ran "archive lib/libutil.a" "link bin/app"
+  ! "$REAL_AR" t lib/libutil.a | grep -q 'extra.o' ||
+    fail "extra.o is still in lib/libutil.a"
+}
+
+library_compile_failure()
+{
+  new_library_project
+  echo 'broken' > src/util.c
+  tmk
+  expect_failure
+  [ ! -e lib/libutil.a ] || fail "archived despite the compile failure"
+  [ ! -e bin/app ] || fail "linked despite the compile failure"
+
+  # What the failure stopped before it started depends on the order, so only
+  # the result is checked
+  set_util 0
+  tmk
+  expect_success
+  expect_exit_value bin/app 0
+  tmk
+  expect_nothing_ran
+}
+
+unknown_library()
+{
+  new_project
+  write_build_file "binary app: src/main.c src/util.c | missing"
+  tmk
+  expect_failure
+  expect_nothing_ran
+  expect_output "'app' depends on unknown library 'missing'"
+}
+
+depends_on_binary()
+{
+  new_project
+  write_build_file "binary tool: src/util.c" \
+                   "binary app: src/main.c src/util.c | tool"
+  tmk
+  expect_failure
+  expect_nothing_ran
+  expect_output "'app' depends on 'tool', which is not a library"
+}
+
+library_cycle()
+{
+  new_project
+  write_build_file "binary app: src/main.c | a" \
+                   "library a: src/util.c | b" \
+                   "library b: src/util.c | a"
+  tmk
+  expect_failure
+  expect_nothing_ran
+  expect_output "dependency cycle: a -> b -> a"
 }
 
 ################################################################################
@@ -767,6 +954,17 @@ run binary_deleted
 
 run two_binaries
 run shared_source_edited
+
+run library_first_build
+run library_source_edited
+run library_used_by_two_binaries
+run library_depending_on_library
+run library_depending_on_library_parallel
+run library_source_removed
+run library_compile_failure
+run unknown_library
+run depends_on_binary
+run library_cycle
 
 run same_name_in_two_directories
 run object_directory_blocked

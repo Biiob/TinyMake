@@ -1,7 +1,10 @@
 #include "tmk_engine.h"
 
 #include <assert.h>
+#include <errno.h>
+#include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "tmk_cmdlog.h"
 #include "tmk_depfile.h"
@@ -139,6 +142,20 @@ static bool create_output_dir(const tmk_node* node)
   return ok;
 }
 
+// ar adds to an existing archive and never removes from it: without this, the
+// object of a source taken out of a library would stay in it
+static bool remove_old_output(const tmk_node* node)
+{
+  if (unlink(tmk_str_cstr(&node->output)) == 0 || errno == ENOENT)
+  {
+    return true;
+  }
+
+  tmk_log_error("Could not remove %s: %s", tmk_str_cstr(&node->output),
+                strerror(errno));
+  return false;
+}
+
 static bool start_node(tmk_runner* runner, const tmk_node* node, size_t idx)
 {
   tmk_runner_command cmd = {
@@ -148,7 +165,8 @@ static bool start_node(tmk_runner* runner, const tmk_node* node, size_t idx)
       .id = idx,
   };
 
-  return create_output_dir(node) && tmk_runner_start(runner, &cmd);
+  return create_output_dir(node) && remove_old_output(node) &&
+         tmk_runner_start(runner, &cmd);
 }
 
 // Takes nodes from the queue while the runner has room: completes the ones

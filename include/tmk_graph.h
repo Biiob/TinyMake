@@ -43,6 +43,8 @@ tmk_define_array(tmk_graph, tmk_node);
 
 // Adds the nodes needed to build the targets of config to graph
 // The commands point into config, which must outlive the graph
+// Returns false, after logging why, if a dependency is not a library that
+// exists, or if dependencies form a cycle
 bool tmk_graph_build(tmk_graph* graph, const tmk_config* config);
 
 void tmk_graph_free(tmk_graph* graph);

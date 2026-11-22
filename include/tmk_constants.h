@@ -6,5 +6,6 @@
 #define TMK_CMDLOG_FILE ".tinymake_log"
 #define TMK_OBJ_DIR "obj"
 #define TMK_BIN_DIR "bin"
+#define TMK_LIB_DIR "lib"
 
 #endif

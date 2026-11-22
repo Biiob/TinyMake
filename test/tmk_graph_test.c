@@ -6,22 +6,60 @@
 
 #include "tmk_graph_test.h"
 
+// Pushes the NULL-terminated strings of args to dst
+static void push_all(tmk_str_array* dst, va_list args)
+{
+  for (const char* s = va_arg(args, const char*); s != NULL;
+       s = va_arg(args, const char*))
+  {
+    tmk_array_push(dst, tmk_str_from_cstr(s));
+  }
+}
+
+static void add_target(tmk_config* config, tmk_target_type type,
+                       const char* name, va_list sources)
+{
+  // Declared on consecutive lines, from line 1
+  tmk_target target = {.type = type, .line_no = config->targets.len + 1};
+  target.name = tmk_str_from_cstr(name);
+  push_all(&target.sources, sources);
+  tmk_array_push(&config->targets, target);
+}
+
 // Adds a binary to config, with the sources given as a NULL-terminated list
 static void add_binary(tmk_config* config, const char* name, ...)
 {
-  tmk_target target = {.type = TMK_TARGET_BINARY};
-  target.name = tmk_str_from_cstr(name);
-
   va_list args;
   va_start(args, name);
-  for (const char* source = va_arg(args, const char*); source != NULL;
-       source = va_arg(args, const char*))
-  {
-    tmk_array_push(&target.sources, tmk_str_from_cstr(source));
-  }
+  add_target(config, TMK_TARGET_BINARY, name, args);
   va_end(args);
+}
 
-  tmk_array_push(&config->targets, target);
+static void add_library(tmk_config* config, const char* name, ...)
+{
+  va_list args;
+  va_start(args, name);
+  add_target(config, TMK_TARGET_LIBRARY, name, args);
+  va_end(args);
+}
+
+// Makes the last target added depend on the NULL-terminated list of names
+static void add_deps(tmk_config* config, ...)
+{
+  va_list args;
+  va_start(args, config);
+  push_all(&config->targets.items[config->targets.len - 1].deps, args);
+  va_end(args);
+}
+
+// Builds the graph of config, which must fail, and frees both
+static void check_invalid(tmk_config* config)
+{
+  tmk_graph graph = {0};
+  assert(!tmk_graph_build(&graph, config));
+  assert(graph.len == 0);
+  tmk_graph_free(&graph);
+  tmk_config_free(config);
 }
 
 static tmk_config create_config(void)
@@ -225,6 +263,136 @@ void test_graph_commands(void)
   const tmk_node* app = &graph.items[find(&graph, "bin/app")];
   assert(tmk_str_equal_cstr(&app->command_display,
                             "cc -lm -o bin/app obj/src/main.o obj/src/util.o"));
+
+  tmk_graph_free(&graph);
+  tmk_config_free(&config);
+}
+
+void test_graph_library(void)
+{
+  // A library archives its objects, and is built once for all its users
+  tmk_config config = create_config();
+  add_library(&config, "core", "src/str.c", "src/mem.c", NULL);
+  add_binary(&config, "app", "src/main.c", NULL);
+  add_deps(&config, "core", NULL);
+  add_binary(&config, "app2", "src/main2.c", NULL);
+  add_deps(&config, "core", NULL);
+  tmk_graph graph = {0};
+  assert(tmk_graph_build(&graph, &config));
+
+  assert(count(&graph, "lib/libcore.a") == 1);
+  size_t core = find(&graph, "lib/libcore.a");
+  check_inputs(&graph, core, 2, "obj/src/str.o", "obj/src/mem.o");
+  assert(
+      tmk_str_equal_cstr(&graph.items[core].command_display,
+                         "ar rcs lib/libcore.a obj/src/str.o obj/src/mem.o"));
+  assert(graph.items[core].status == TMK_NODE_WAITING);
+  assert(graph.items[core].n_pending_inputs == 2);
+
+  // Binaries link their objects first, then the library, and wait for both
+  size_t app = find(&graph, "bin/app");
+  check_inputs(&graph, app, 2, "obj/src/main.o", "lib/libcore.a");
+  assert(tmk_str_equal_cstr(&graph.items[app].command_display,
+                            "cc -o bin/app obj/src/main.o lib/libcore.a"));
+  assert(graph.items[app].n_pending_inputs == 2);
+  assert(contains(&graph.items[core].dependents, app));
+  assert(contains(&graph.items[core].dependents, find(&graph, "bin/app2")));
+
+  tmk_graph_free(&graph);
+  tmk_config_free(&config);
+}
+
+void test_graph_archiver(void)
+{
+  tmk_config config = create_config();
+  config.archiver = tmk_str_from_cstr("llvm-ar");
+  add_library(&config, "core", "src/str.c", NULL);
+  tmk_graph graph = {0};
+  assert(tmk_graph_build(&graph, &config));
+
+  const tmk_node* core = &graph.items[find(&graph, "lib/libcore.a")];
+  assert(tmk_str_equal_cstr(&core->command_display,
+                            "llvm-ar rcs lib/libcore.a obj/src/str.o"));
+
+  tmk_graph_free(&graph);
+  tmk_config_free(&config);
+}
+
+void test_graph_link_order(void)
+{
+  // A static library is searched for what is undefined at that point of the
+  // link: each library must come before the ones it depends on, including
+  // those it only reaches through others, and only once. Declaring a library
+  // after its users is fine
+  tmk_config config = create_config();
+  add_binary(&config, "app", "src/main.c", NULL);
+  add_deps(&config, "base", "net", NULL);
+  add_library(&config, "net", "src/net.c", NULL);
+  add_deps(&config, "http", "base", NULL);
+  add_library(&config, "http", "src/http.c", NULL);
+  add_deps(&config, "base", NULL);
+  add_library(&config, "base", "src/base.c", NULL);
+  tmk_graph graph = {0};
+  assert(tmk_graph_build(&graph, &config));
+
+  check_inputs(&graph, find(&graph, "bin/app"), 4, "obj/src/main.o",
+               "lib/libnet.a", "lib/libhttp.a", "lib/libbase.a");
+
+  // A library is not linked into another one: net only archives its objects
+  check_inputs(&graph, find(&graph, "lib/libnet.a"), 1, "obj/src/net.o");
+
+  tmk_graph_free(&graph);
+  tmk_config_free(&config);
+}
+
+void test_graph_invalid_deps(void)
+{
+  tmk_config config = create_config();
+  add_binary(&config, "app", "src/main.c", NULL);
+  add_deps(&config, "missing", NULL);
+  check_invalid(&config);
+
+  // Only libraries can be depended on
+  config = create_config();
+  add_binary(&config, "tool", "src/tool.c", NULL);
+  add_binary(&config, "app", "src/main.c", NULL);
+  add_deps(&config, "tool", NULL);
+  check_invalid(&config);
+
+  // Cycles, direct or not, including through a library depending on itself
+  config = create_config();
+  add_library(&config, "a", "src/a.c", NULL);
+  add_deps(&config, "a", NULL);
+  check_invalid(&config);
+
+  config = create_config();
+  add_binary(&config, "app", "src/main.c", NULL);
+  add_deps(&config, "a", NULL);
+  add_library(&config, "a", "src/a.c", NULL);
+  add_deps(&config, "b", NULL);
+  add_library(&config, "b", "src/b.c", NULL);
+  add_deps(&config, "c", NULL);
+  add_library(&config, "c", "src/c.c", NULL);
+  add_deps(&config, "a", NULL);
+  check_invalid(&config);
+}
+
+void test_graph_diamond_is_no_cycle(void)
+{
+  // Two paths to the same library is a diamond, not a cycle
+  tmk_config config = create_config();
+  add_binary(&config, "app", "src/main.c", NULL);
+  add_deps(&config, "left", "right", NULL);
+  add_library(&config, "left", "src/left.c", NULL);
+  add_deps(&config, "base", NULL);
+  add_library(&config, "right", "src/right.c", NULL);
+  add_deps(&config, "base", NULL);
+  add_library(&config, "base", "src/base.c", NULL);
+  tmk_graph graph = {0};
+  assert(tmk_graph_build(&graph, &config));
+
+  check_inputs(&graph, find(&graph, "bin/app"), 4, "obj/src/main.o",
+               "lib/libright.a", "lib/libleft.a", "lib/libbase.a");
 
   tmk_graph_free(&graph);
   tmk_config_free(&config);

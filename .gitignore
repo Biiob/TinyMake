@@ -3,6 +3,7 @@
 
 bin/
 obj/
+lib/
 bin_save/
 save_bin/
 

@@ -120,6 +120,52 @@ void test_parser_many_targets(void)
   tmk_str_free(&content);
 }
 
+void test_parser_libraries(void)
+{
+  // Dependencies come after a '|', and are only names: whether they exist is
+  // checked when the graph is built, since they can be declared later
+  tmk_config config;
+  bool ok = parse(
+      "cc = gcc\n"
+      "ar = llvm-ar\n"
+      "binary app: src/main.c | net core\n"
+      "library net: src/net.c src/http.c | core\n"
+      "library core: src/core.c\n",
+      &config);
+  assert(ok);
+  assert(tmk_str_equal_cstr(&config.archiver, "llvm-ar"));
+  assert(config.targets.len == 3);
+
+  tmk_target* app = &config.targets.items[0];
+  assert(app->type == TMK_TARGET_BINARY);
+  assert(app->sources.len == 1);
+  assert(tmk_str_equal_cstr(&app->sources.items[0], "src/main.c"));
+  assert(app->deps.len == 2);
+  assert(tmk_str_equal_cstr(&app->deps.items[0], "net"));
+  assert(tmk_str_equal_cstr(&app->deps.items[1], "core"));
+
+  tmk_target* net = &config.targets.items[1];
+  assert(net->type == TMK_TARGET_LIBRARY);
+  assert(tmk_str_equal_cstr(&net->name, "net"));
+  assert(net->line_no == 4);
+  assert(net->sources.len == 2);
+  assert(tmk_str_equal_cstr(&net->sources.items[1], "src/http.c"));
+  assert(net->deps.len == 1);
+  assert(tmk_str_equal_cstr(&net->deps.items[0], "core"));
+
+  tmk_target* core = &config.targets.items[2];
+  assert(core->type == TMK_TARGET_LIBRARY);
+  assert(core->sources.len == 1);
+  assert(core->deps.len == 0);
+
+  tmk_config_free(&config);
+
+  // Without an 'ar' line, the archiver is left empty
+  assert(parse("cc = gcc\nlibrary core: a.c\n", &config));
+  assert(config.archiver.len == 0);
+  tmk_config_free(&config);
+}
+
 void test_parser_invalid(void)
 {
   // Values
@@ -135,6 +181,9 @@ void test_parser_invalid(void)
   check_invalid("cc = gcc\nldflags = -lm\nldflags = -lz\n");
   check_invalid("cc = gcc\nincludes = a\nincludes = b\n");
   check_invalid("cc = gcc\nbinary app: a.c\nbinary app: b.c\n");
+  check_invalid("cc = gcc\nar = ar\nar = llvm-ar\n");
+  // Binaries and libraries share names
+  check_invalid("cc = gcc\nlibrary app: a.c\nbinary app: b.c\n");
 
   // Binaries
   check_invalid("cc = gcc\nbinary\n");
@@ -142,6 +191,17 @@ void test_parser_invalid(void)
   check_invalid("cc = gcc\nbinary app src/main.c\n");
   check_invalid("cc = gcc\nbinary :\n");
   check_invalid("cc = gcc\nbinary app:\n");
+
+  // Libraries
+  check_invalid("cc = gcc\nlibrary\n");
+  check_invalid("cc = gcc\nlibrary core a.c\n");
+  check_invalid("cc = gcc\nlibrary core:\n");
+
+  // Dependencies
+  check_invalid("cc = gcc\nbinary app: | core\n");
+  check_invalid("cc = gcc\nbinary app: a.c |\n");
+  check_invalid("cc = gcc\nlibrary net: a.c |\n");
+  check_invalid("cc = gcc\nbinary app: a.c | core | net\n");
 
   // Unknown key, including a typo
   check_invalid("cc = gcc\ncflag = -Wall\n");

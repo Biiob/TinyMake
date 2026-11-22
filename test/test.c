@@ -82,6 +82,7 @@ int main(void)
   RUN(test_parser_layout);
   RUN(test_parser_empty_list);
   RUN(test_parser_many_targets);
+  RUN(test_parser_libraries);
   RUN(test_parser_invalid);
   RUN(test_parser_missing_file);
 
@@ -90,6 +91,11 @@ int main(void)
   RUN(test_graph_edges);
   RUN(test_graph_initial_status);
   RUN(test_graph_commands);
+  RUN(test_graph_library);
+  RUN(test_graph_archiver);
+  RUN(test_graph_link_order);
+  RUN(test_graph_invalid_deps);
+  RUN(test_graph_diamond_is_no_cycle);
 
   RUN(test_cmdlog_load_missing_file);
   RUN(test_cmdlog_load_empty_file);

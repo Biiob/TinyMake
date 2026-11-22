@@ -14,6 +14,7 @@ typedef struct
   size_t line_no;
   // Line on which each key was defined, 0 if not defined yet
   size_t cc_line;
+  size_t ar_line;
   size_t cflags_line;
   size_t ldflags_line;
   size_t includes_line;
@@ -113,45 +114,75 @@ static bool parse_list(const parse_state* st, tmk_str_array* tokens,
   return true;
 }
 
-// "binary name: sources..."
-static bool parse_binary(tmk_config* config, const parse_state* st,
-                         tmk_str_array* tokens)
+// "binary/library name: sources... [| libraries...]"
+static bool parse_target(tmk_config* config, const parse_state* st,
+                         tmk_str_array* tokens, tmk_target_type type)
 {
+  const char* kind = type == TMK_TARGET_BINARY ? "binary" : "library";
   tmk_str* name = tokens->len >= 2 ? &tokens->items[1] : NULL;
   if (name == NULL || name->len < 2 || name->str[name->len - 1] != ':')
   {
-    return parse_error(st, "expected 'binary <name>: <sources...>'");
+    return parse_error(
+        st, "expected '%s <name>: <sources...> [| <libraries...>]'", kind);
   }
 
   // The ':' is not part of the name
   tmk_str_set_len(name, name->len - 1);
 
-  size_t n_sources = tokens->len - 2;
+  // Sources go up to the '|', and the libraries come after it
+  size_t bar = tokens->len;
+  for (size_t i = 2; i < tokens->len; ++i)
+  {
+    if (!tmk_str_equal_cstr(&tokens->items[i], "|"))
+    {
+      continue;
+    }
+    if (bar != tokens->len)
+    {
+      return parse_error(st, "%s '%s' has more than one '|'", kind,
+                         tmk_str_cstr(name));
+    }
+    bar = i;
+  }
+
+  size_t n_sources = bar - 2;
   if (n_sources == 0)
   {
-    return parse_error(st, "binary '%s' has no source files",
+    return parse_error(st, "%s '%s' has no source files", kind,
+                       tmk_str_cstr(name));
+  }
+  if (bar == tokens->len - 1)
+  {
+    return parse_error(st, "%s '%s' has no library after '|'", kind,
                        tmk_str_cstr(name));
   }
 
+  // Binaries and libraries share names: dependencies refer to them
   for (size_t i = 0; i < config->targets.len; ++i)
   {
-    if (tmk_str_equal(&config->targets.items[i].name, name))
+    const tmk_target* other = &config->targets.items[i];
+    if (tmk_str_equal(&other->name, name))
     {
-      return parse_error(st, "binary '%s' already defined", tmk_str_cstr(name));
+      return parse_error(st, "'%s' already defined on line %zu",
+                         tmk_str_cstr(name), other->line_no);
     }
   }
 
   tmk_target target = {0};
-  target.type = TMK_TARGET_BINARY;
+  target.type = type;
   target.name = tmk_str_clone(name);
   target.line_no = st->line_no;
-  tmk_log_debug("Found binary %s with %zu sources", tmk_str_cstr(name),
-                n_sources);
 
-  for (size_t i = 2; i < tokens->len; ++i)
+  for (size_t i = 2; i < bar; ++i)
   {
     tmk_array_push(&target.sources, tmk_str_array_take(tokens, i));
   }
+  for (size_t i = bar + 1; i < tokens->len; ++i)
+  {
+    tmk_array_push(&target.deps, tmk_str_array_take(tokens, i));
+  }
+  tmk_log_debug("Found %s %s with %zu sources and %zu libraries", kind,
+                tmk_str_cstr(name), target.sources.len, target.deps.len);
 
   tmk_array_push(&config->targets, target);
 
@@ -189,6 +220,10 @@ bool tmk_parser_parse(tmk_config* config, const tmk_str* path)
     {
       ok = parse_value(&st, &tokens, &config->compiler, &st.cc_line);
     }
+    else if (tmk_str_equal_cstr(key, "ar"))
+    {
+      ok = parse_value(&st, &tokens, &config->archiver, &st.ar_line);
+    }
     else if (tmk_str_equal_cstr(key, "cflags"))
     {
       ok = parse_list(&st, &tokens, &config->compile_flags, &st.cflags_line);
@@ -203,7 +238,11 @@ bool tmk_parser_parse(tmk_config* config, const tmk_str* path)
     }
     else if (tmk_str_equal_cstr(key, "binary"))
     {
-      ok = parse_binary(config, &st, &tokens);
+      ok = parse_target(config, &st, &tokens, TMK_TARGET_BINARY);
+    }
+    else if (tmk_str_equal_cstr(key, "library"))
+    {
+      ok = parse_target(config, &st, &tokens, TMK_TARGET_LIBRARY);
     }
     else
     {
