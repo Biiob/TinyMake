@@ -26,28 +26,35 @@ typedef struct
   size_t id;
 } tmk_runner_command;
 
-// The fields of the two types below are private to the runner
+// The fields of the types below are private to the runner
 
-typedef enum
-{
-  TMK_RUNNER_JOB_AVAILABLE,
-  TMK_RUNNER_JOB_RUNNING
-} tmk_runner_job_state;
-
+// A command running as a process
 typedef struct
 {
   tmk_runner_command command;
-  tmk_runner_job_state state;
   pid_t pid;
   // Everything the command writes to stdout and stderr
   tmk_str output;
 } tmk_runner_job;
 
+typedef enum
+{
+  TMK_RUNNER_SLOT_FREE,
+  TMK_RUNNER_SLOT_BUSY
+} tmk_runner_slot_state;
+
+// Room for one job: job is only meaningful while the slot is busy
+typedef struct
+{
+  tmk_runner_slot_state state;
+  tmk_runner_job job;
+} tmk_runner_slot;
+
 typedef struct
 {
   // One slot per job that can run at the same time
-  tmk_runner_job* jobs;
-  // pfds[i] is the pipe of jobs[i] while it runs, -1 otherwise
+  tmk_runner_slot* slots;
+  // pfds[i] is the pipe of the job in slots[i] while it runs, -1 otherwise
   struct pollfd* pfds;
   size_t max_jobs;
   size_t n_running;

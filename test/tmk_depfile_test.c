@@ -13,21 +13,21 @@ static void check_depfile(const char* content, const char** expected,
 {
   tmk_str path = test_write_temp_file(content);
 
-  tmk_str_array deps;
-  assert(tmk_depfile_parse(&deps, &path));
-  assert(deps.len == n_expected);
+  tmk_str_array paths;
+  assert(tmk_depfile_parse(&paths, &path));
+  assert(paths.len == n_expected);
 
   if (n_expected == 0)
   {
-    assert(deps.items == NULL);
+    assert(paths.items == NULL);
   }
 
   for (size_t i = 0; i < n_expected; ++i)
   {
-    assert(tmk_str_equal_cstr(&deps.items[i], expected[i]));
+    assert(tmk_str_equal_cstr(&paths.items[i], expected[i]));
   }
 
-  tmk_str_array_free(&deps);
+  tmk_str_array_free(&paths);
   unlink(tmk_str_cstr(&path));
   tmk_str_free(&path);
 }
@@ -66,7 +66,7 @@ void test_depfile_extra_whitespace(void)
       "src/a.c", "include/a.h", "include/b.h");
 }
 
-void test_depfile_no_prerequisites(void)
+void test_depfile_no_discovered_inputs(void)
 {
   check_depfile("obj/a.o:\n", NULL, 0);
 }
@@ -81,11 +81,11 @@ void test_depfile_missing_file(void)
   tmk_str path = tmk_str_from_cstr("/tmp/tmk_depfile_test_does_not_exist.d");
 
   // Garbage on entry: tmk_depfile_parse must still leave an empty array
-  tmk_str_array deps;
-  memset(&deps, 0xAB, sizeof deps);
-  assert(!tmk_depfile_parse(&deps, &path));
-  assert(deps.items == NULL);
-  assert(deps.len == 0);
+  tmk_str_array paths;
+  memset(&paths, 0xAB, sizeof paths);
+  assert(!tmk_depfile_parse(&paths, &path));
+  assert(paths.items == NULL);
+  assert(paths.len == 0);
 
   tmk_str_free(&path);
 }

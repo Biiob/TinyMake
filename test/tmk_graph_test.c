@@ -43,8 +43,8 @@ static void add_library(tmk_config* config, const char* name, ...)
   va_end(args);
 }
 
-// Makes the last target added depend on the NULL-terminated list of names
-static void add_deps(tmk_config* config, ...)
+// Gives the last target added the NULL-terminated list of dependencies
+static void add_dependencies(tmk_config* config, ...)
 {
   va_list args;
   va_start(args, config);
@@ -274,9 +274,9 @@ void test_graph_library(void)
   tmk_config config = create_config();
   add_library(&config, "core", "src/str.c", "src/mem.c", NULL);
   add_binary(&config, "app", "src/main.c", NULL);
-  add_deps(&config, "core", NULL);
+  add_dependencies(&config, "core", NULL);
   add_binary(&config, "app2", "src/main2.c", NULL);
-  add_deps(&config, "core", NULL);
+  add_dependencies(&config, "core", NULL);
   tmk_graph graph = {0};
   assert(tmk_graph_build(&graph, &config));
 
@@ -326,11 +326,11 @@ void test_graph_link_order(void)
   // after its users is fine
   tmk_config config = create_config();
   add_binary(&config, "app", "src/main.c", NULL);
-  add_deps(&config, "base", "net", NULL);
+  add_dependencies(&config, "base", "net", NULL);
   add_library(&config, "net", "src/net.c", NULL);
-  add_deps(&config, "http", "base", NULL);
+  add_dependencies(&config, "http", "base", NULL);
   add_library(&config, "http", "src/http.c", NULL);
-  add_deps(&config, "base", NULL);
+  add_dependencies(&config, "base", NULL);
   add_library(&config, "base", "src/base.c", NULL);
   tmk_graph graph = {0};
   assert(tmk_graph_build(&graph, &config));
@@ -345,35 +345,35 @@ void test_graph_link_order(void)
   tmk_config_free(&config);
 }
 
-void test_graph_invalid_deps(void)
+void test_graph_invalid_dependencies(void)
 {
   tmk_config config = create_config();
   add_binary(&config, "app", "src/main.c", NULL);
-  add_deps(&config, "missing", NULL);
+  add_dependencies(&config, "missing", NULL);
   check_invalid(&config);
 
   // Only libraries can be depended on
   config = create_config();
   add_binary(&config, "tool", "src/tool.c", NULL);
   add_binary(&config, "app", "src/main.c", NULL);
-  add_deps(&config, "tool", NULL);
+  add_dependencies(&config, "tool", NULL);
   check_invalid(&config);
 
   // Cycles, direct or not, including through a library depending on itself
   config = create_config();
   add_library(&config, "a", "src/a.c", NULL);
-  add_deps(&config, "a", NULL);
+  add_dependencies(&config, "a", NULL);
   check_invalid(&config);
 
   config = create_config();
   add_binary(&config, "app", "src/main.c", NULL);
-  add_deps(&config, "a", NULL);
+  add_dependencies(&config, "a", NULL);
   add_library(&config, "a", "src/a.c", NULL);
-  add_deps(&config, "b", NULL);
+  add_dependencies(&config, "b", NULL);
   add_library(&config, "b", "src/b.c", NULL);
-  add_deps(&config, "c", NULL);
+  add_dependencies(&config, "c", NULL);
   add_library(&config, "c", "src/c.c", NULL);
-  add_deps(&config, "a", NULL);
+  add_dependencies(&config, "a", NULL);
   check_invalid(&config);
 }
 
@@ -382,11 +382,11 @@ void test_graph_diamond_is_no_cycle(void)
   // Two paths to the same library is a diamond, not a cycle
   tmk_config config = create_config();
   add_binary(&config, "app", "src/main.c", NULL);
-  add_deps(&config, "left", "right", NULL);
+  add_dependencies(&config, "left", "right", NULL);
   add_library(&config, "left", "src/left.c", NULL);
-  add_deps(&config, "base", NULL);
+  add_dependencies(&config, "base", NULL);
   add_library(&config, "right", "src/right.c", NULL);
-  add_deps(&config, "base", NULL);
+  add_dependencies(&config, "base", NULL);
   add_library(&config, "base", "src/base.c", NULL);
   tmk_graph graph = {0};
   assert(tmk_graph_build(&graph, &config));

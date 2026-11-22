@@ -74,7 +74,7 @@ int main(void)
   RUN(test_depfile_continuation_lines);
   RUN(test_depfile_no_trailing_newline);
   RUN(test_depfile_extra_whitespace);
-  RUN(test_depfile_no_prerequisites);
+  RUN(test_depfile_no_discovered_inputs);
   RUN(test_depfile_empty);
   RUN(test_depfile_missing_file);
 
@@ -94,7 +94,7 @@ int main(void)
   RUN(test_graph_library);
   RUN(test_graph_archiver);
   RUN(test_graph_link_order);
-  RUN(test_graph_invalid_deps);
+  RUN(test_graph_invalid_dependencies);
   RUN(test_graph_diamond_is_no_cycle);
 
   RUN(test_cmdlog_load_missing_file);

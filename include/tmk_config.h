@@ -18,7 +18,7 @@ typedef struct
   tmk_target_type type;
   tmk_str name;
   tmk_str_array sources;
-  // Names of the libraries the target depends on, as written
+  // Dependencies of the target, as written
   tmk_str_array deps;
   // Where the target is declared in the build file
   size_t line_no;

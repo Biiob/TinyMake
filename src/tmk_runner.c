@@ -149,7 +149,7 @@ static size_t find_free_slot(const tmk_runner* r)
 {
   for (size_t i = 0; i < r->max_jobs; ++i)
   {
-    if (r->jobs[i].state == TMK_RUNNER_JOB_AVAILABLE)
+    if (r->slots[i].state == TMK_RUNNER_SLOT_FREE)
     {
       return i;
     }
@@ -164,11 +164,11 @@ void tmk_runner_init(tmk_runner* r, size_t max_jobs)
 
   r->max_jobs = max_jobs;
   r->n_running = 0;
-  r->jobs = tmk_xrealloc(NULL, max_jobs * sizeof(*r->jobs));
+  r->slots = tmk_xrealloc(NULL, max_jobs * sizeof(*r->slots));
   r->pfds = tmk_xrealloc(NULL, max_jobs * sizeof(*r->pfds));
   for (size_t i = 0; i < max_jobs; ++i)
   {
-    r->jobs[i] = (tmk_runner_job){.state = TMK_RUNNER_JOB_AVAILABLE};
+    r->slots[i] = (tmk_runner_slot){.state = TMK_RUNNER_SLOT_FREE};
     r->pfds[i] = (struct pollfd){.fd = -1, .events = POLLIN};
   }
 }
@@ -185,17 +185,17 @@ size_t tmk_runner_n_running(const tmk_runner* r)
 
 bool tmk_runner_start(tmk_runner* r, const tmk_runner_command* cmd)
 {
-  size_t slot = find_free_slot(r);
-  assert(slot < r->max_jobs);
+  size_t slot_idx = find_free_slot(r);
+  assert(slot_idx < r->max_jobs);
 
-  tmk_runner_job* j = &r->jobs[slot];
-  j->command = *cmd;
-  if (!start_job(j, &r->pfds[slot].fd))
+  tmk_runner_slot* s = &r->slots[slot_idx];
+  s->job.command = *cmd;
+  if (!start_job(&s->job, &r->pfds[slot_idx].fd))
   {
     return false;
   }
 
-  j->state = TMK_RUNNER_JOB_RUNNING;
+  s->state = TMK_RUNNER_SLOT_BUSY;
   r->n_running++;
   return true;
 }
@@ -226,7 +226,8 @@ bool tmk_runner_wait_any(tmk_runner* r, tmk_runner_result* result)
         continue;
       }
 
-      tmk_runner_job* j = &r->jobs[i];
+      tmk_runner_slot* s = &r->slots[i];
+      tmk_runner_job* j = &s->job;
       char buf[4096];
       ssize_t n = read(r->pfds[i].fd, buf, sizeof(buf));
       if (n > 0)
@@ -242,7 +243,7 @@ bool tmk_runner_wait_any(tmk_runner* r, tmk_runner_result* result)
       // The command closed its output, so it has exited or is about to
       close(r->pfds[i].fd);
       r->pfds[i].fd = -1;
-      j->state = TMK_RUNNER_JOB_AVAILABLE;
+      s->state = TMK_RUNNER_SLOT_FREE;
       r->n_running--;
 
       result->id = j->command.id;
@@ -255,17 +256,17 @@ void tmk_runner_free(tmk_runner* r)
 {
   for (size_t i = 0; i < r->max_jobs; ++i)
   {
-    tmk_runner_job* j = &r->jobs[i];
-    if (j->state == TMK_RUNNER_JOB_RUNNING)
+    tmk_runner_slot* s = &r->slots[i];
+    if (s->state == TMK_RUNNER_SLOT_BUSY)
     {
       close(r->pfds[i].fd);
       int detail;
-      wait_child(j->pid, &detail);
-      tmk_str_free(&j->output);
+      wait_child(s->job.pid, &detail);
+      tmk_str_free(&s->job.output);
     }
   }
 
-  free(r->jobs);
+  free(r->slots);
   free(r->pfds);
   *r = (tmk_runner){0};
 }

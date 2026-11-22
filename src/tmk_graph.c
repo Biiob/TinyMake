@@ -104,7 +104,7 @@ static char** build_binary_argv(const tmk_graph* graph,
 
 // "ar rcs <library> <objects...>"
 // The arguments point into config and the graph, which must outlive the result
-static char** build_archive_argv(const tmk_graph* graph,
+static char** build_library_argv(const tmk_graph* graph,
                                  const tmk_config* config, const tmk_node* node)
 {
   // Archiver, "rcs", the library, objects and NULL
@@ -349,7 +349,7 @@ static size_t find_or_add_library(tmk_graph* graph, const tmk_config* config,
   }
 
   tmk_node* node = &graph->items[idx];
-  set_command(node, build_archive_argv(graph, config, node));
+  set_command(node, build_library_argv(graph, config, node));
   return idx;
 }
 

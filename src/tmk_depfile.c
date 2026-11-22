@@ -2,9 +2,9 @@
 
 #include <stdio.h>
 
-bool tmk_depfile_parse(tmk_str_array* deps, const tmk_str* path)
+bool tmk_depfile_parse(tmk_str_array* paths, const tmk_str* path)
 {
-  *deps = (tmk_str_array){0};
+  *paths = (tmk_str_array){0};
 
   FILE* f = fopen(tmk_str_cstr(path), "rb");
   if (f == NULL)
@@ -20,14 +20,14 @@ bool tmk_depfile_parse(tmk_str_array* deps, const tmk_str* path)
     tmk_str_array tokens = tmk_str_tokenize(&line, ' ');
     for (size_t i = 0; i < tokens.len; ++i)
     {
-      // The first token is the target, and a lone '\' continues the line
+      // The first token is the rule's target, and a lone '\' continues the line
       if (is_target || tokens.items[i].str[0] == '\\')
       {
         is_target = false;
         continue;
       }
 
-      tmk_array_push(deps, tmk_str_array_take(&tokens, i));
+      tmk_array_push(paths, tmk_str_array_take(&tokens, i));
     }
     tmk_str_array_free(&tokens);
   }

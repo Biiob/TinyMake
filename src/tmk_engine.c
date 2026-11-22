@@ -27,8 +27,8 @@ typedef struct
   bool stopping;
 } build;
 
-// The files node is built from: its inputs in the graph, plus the headers its
-// depfile lists. Returns false if the depfile could not be read
+// The files node is built from: its inputs in the graph, plus the discovered
+// inputs its depfile lists. Returns false if the depfile could not be read
 static bool collect_input_paths(tmk_str_array* paths, const tmk_graph* graph,
                                 const tmk_node* node)
 {
@@ -36,7 +36,7 @@ static bool collect_input_paths(tmk_str_array* paths, const tmk_graph* graph,
   if (node->depfile_path.len > 0 &&
       !tmk_depfile_parse(paths, &node->depfile_path))
   {
-    tmk_log_debug("Could not read dependency file: %s",
+    tmk_log_debug("Could not read depfile: %s",
                   tmk_str_cstr(&node->depfile_path));
     return false;
   }
@@ -72,7 +72,7 @@ static bool any_newer(const tmk_str_array* paths, const struct stat* out_stat)
 }
 
 // The output of node is up to date if it exists, is newer than all of its
-// inputs, and was built by the same command
+// inputs and discovered inputs, and was built by the same command
 static bool up_to_date(const tmk_graph* graph, const tmk_node* node,
                        const tmk_cmdlog* cmdlog)
 {
@@ -82,11 +82,11 @@ static bool up_to_date(const tmk_graph* graph, const tmk_node* node,
     return false;
   }
 
-  tmk_str_array inputs;
-  bool fresh = collect_input_paths(&inputs, graph, node) &&
-               !any_newer(&inputs, &out_stat);
-  tmk_str_array_free(&inputs);
-  if (!fresh)
+  tmk_str_array paths;
+  bool inputs_older = collect_input_paths(&paths, graph, node) &&
+                      !any_newer(&paths, &out_stat);
+  tmk_str_array_free(&paths);
+  if (!inputs_older)
   {
     return false;
   }

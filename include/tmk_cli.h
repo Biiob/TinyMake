@@ -6,7 +6,7 @@
 
 typedef struct
 {
-  // Maximum number of commands run at the same time, at least 1
+  // Maximum number of jobs run at the same time, at least 1
   size_t max_jobs;
 } tmk_cli_args;
 

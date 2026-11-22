@@ -155,7 +155,7 @@ expect_exit_value()
 {
   "$1"
   local value=$?
-  [ "$value" -eq "$2" ] || fail "$1 returned $value instead of $2 (stale?)"
+  [ "$value" -eq "$2" ] || fail "$1 returned $value instead of $2 (not rebuilt?)"
 }
 
 expect_output()
@@ -181,7 +181,7 @@ expect_not_logged()
 expect_no_temp_files()
 {
   if ls -A | grep -q '^\.tinymake_log_'; then
-    fail "temporary log file left behind: $(ls -A | grep '^\.tinymake_log_')"
+    fail "temporary command log file left behind: $(ls -A | grep '^\.tinymake_log_')"
   fi
 }
 
@@ -263,7 +263,7 @@ log_format_is_stable()
   cp .tinymake_log first.log
   tmk
   expect_success
-  cmp -s first.log .tinymake_log || fail "the log changed on a no-change build"
+  cmp -s first.log .tinymake_log || fail "the command log changed on a no-change build"
 }
 
 ################################################################################
@@ -837,7 +837,7 @@ build_file_invalid_keeps_log()
   tmk
   expect_failure
   expect_nothing_ran
-  cmp -s before.log .tinymake_log || fail "the log changed on a parse error"
+  cmp -s before.log .tinymake_log || fail "the command log changed on a parse error"
 }
 
 build_file_missing()
@@ -868,7 +868,7 @@ log_old_format()
   expect_ran "compile src/main.c" "compile src/util.c" "link bin/app"
   expect_output "unknown format"
   [ "$(head -n 1 .tinymake_log)" = "tinymake log v1.0" ] ||
-    fail "the log was not rewritten in the current format"
+    fail "the command log was not rewritten in the current format"
   tmk
   expect_nothing_ran
 }
