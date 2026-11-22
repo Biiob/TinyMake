@@ -170,18 +170,20 @@ expect_no_output()
 
 expect_logged()
 {
-  grep -qF -- "$1" .tinymake_log || fail "expected '$1' in .tinymake_log"
+  grep -qF -- "$1" .tinymake/commands || fail "expected '$1' in .tinymake/commands"
 }
 
 expect_not_logged()
 {
-  ! grep -qF -- "$1" .tinymake_log || fail "did not expect '$1' in .tinymake_log"
+  ! grep -qF -- "$1" .tinymake/commands || fail "did not expect '$1' in .tinymake/commands"
 }
 
 expect_no_temp_files()
 {
-  if ls -A | grep -q '^\.tinymake_log_'; then
-    fail "temporary command log file left behind: $(ls -A | grep '^\.tinymake_log_')"
+  local left
+  left=$(find . .tinymake -maxdepth 1 -name 'commands_*' 2>/dev/null)
+  if [ -n "$left" ]; then
+    fail "temporary command log file left behind: $left"
   fi
 }
 
@@ -260,10 +262,10 @@ no_change_parallel()
 log_format_is_stable()
 {
   built_project
-  cp .tinymake_log first.log
+  cp .tinymake/commands first.log
   tmk
   expect_success
-  cmp -s first.log .tinymake_log || fail "the command log changed on a no-change build"
+  cmp -s first.log .tinymake/commands || fail "the command log changed on a no-change build"
 }
 
 ################################################################################
@@ -832,12 +834,12 @@ compiler_not_found()
 build_file_invalid_keeps_log()
 {
   built_project
-  cp .tinymake_log before.log
+  cp .tinymake/commands before.log
   echo 'garbage here' >> build.txt
   tmk
   expect_failure
   expect_nothing_ran
-  cmp -s before.log .tinymake_log || fail "the command log changed on a parse error"
+  cmp -s before.log .tinymake/commands || fail "the command log changed on a parse error"
 }
 
 build_file_missing()
@@ -862,12 +864,12 @@ unknown_argument()
 log_old_format()
 {
   built_project
-  printf 'clang -c src/main.c -o obj/src/main.o\n' > .tinymake_log
+  printf 'clang -c src/main.c -o obj/src/main.o\n' > .tinymake/commands
   tmk
   expect_success
   expect_ran "compile src/main.c" "compile src/util.c" "link bin/app"
   expect_output "unknown format"
-  [ "$(head -n 1 .tinymake_log)" = "tinymake log v1.0" ] ||
+  [ "$(head -n 1 .tinymake/commands)" = "tinymake log v1.0" ] ||
     fail "the command log was not rewritten in the current format"
   tmk
   expect_nothing_ran
@@ -876,7 +878,7 @@ log_old_format()
 log_deleted()
 {
   built_project
-  rm .tinymake_log
+  rm .tinymake/commands
   tmk
   expect_success
   expect_ran "compile src/main.c" "compile src/util.c" "link bin/app"
@@ -887,11 +889,47 @@ log_deleted()
 log_cannot_be_saved()
 {
   new_project
-  mkdir .tinymake_log
+  mkdir -p .tinymake/commands
   tmk
   expect_success
   expect_exit_value bin/app 0
   expect_output "Could not replace command log"
+  expect_no_temp_files
+}
+
+state_dir_deleted()
+{
+  built_project
+  rm -r .tinymake
+  tmk
+  expect_success
+  expect_ran "compile src/main.c" "compile src/util.c" "link bin/app"
+  expect_no_output "[WARN]"
+  [ -f .tinymake/commands ] || fail "the command log was not saved"
+  tmk
+  expect_nothing_ran
+}
+
+# The old .tinymake_log is not migrated: everything rebuilds once
+old_log_is_ignored()
+{
+  built_project
+  mv .tinymake/commands .tinymake_log
+  rm -r .tinymake
+  tmk
+  expect_success
+  expect_ran "compile src/main.c" "compile src/util.c" "link bin/app"
+}
+
+# The state directory cannot be created, which only costs a warning
+state_dir_blocked()
+{
+  new_project
+  : > .tinymake
+  tmk
+  expect_success
+  expect_exit_value bin/app 0
+  expect_output "Command log file was not updated"
   expect_no_temp_files
 }
 
@@ -986,6 +1024,9 @@ run unknown_argument
 run log_old_format
 run log_deleted
 run log_cannot_be_saved
+run state_dir_deleted
+run old_log_is_ignored
+run state_dir_blocked
 run no_temp_files_left
 
 if [ "$N_FAILED" -eq 0 ]; then

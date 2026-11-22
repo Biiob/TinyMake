@@ -36,7 +36,7 @@ binary app: src/main.c src/app.c | util
 
 - Objects go to `obj/`, binaries to `bin/<name>`, libraries to `lib/lib<name>.a`.
 - `cc` is required; every other setting is optional.
-- An output is rebuilt when it is missing, older than one of its sources or headers, or was built by a different command (tracked in `.tinymake_log`).
+- An output is rebuilt when it is missing, older than one of its sources or headers, or was built by a different command (tracked in `.tinymake/commands`).
 
 ## Tests
 

@@ -112,6 +112,7 @@ int main(void)
   RUN(test_cmdlog_save_empty);
   RUN(test_cmdlog_save_replaces_existing);
   RUN(test_cmdlog_save_invalid_path);
+  RUN(test_cmdlog_save_in_subdirectory);
   RUN(test_cmdlog_round_trip);
   RUN(test_cmdlog_free);
 

@@ -25,9 +25,9 @@ const tmk_str* tmk_cmdlog_find(const tmk_cmdlog* log, const tmk_str* output);
 void tmk_cmdlog_record(tmk_cmdlog* log, const tmk_str* output,
                        const tmk_str* command);
 
-// Writes to a temporary file in the current directory, then renames it to
-// path, which must be in the current directory too. On failure, logs the cause
-// and returns false, leaving the file at path untouched
+// Writes to a temporary file next to path, then renames it to path. The
+// directory of path must exist. On failure, logs the cause and returns false,
+// leaving the file at path untouched
 bool tmk_cmdlog_save(const tmk_cmdlog* log, const tmk_str* path);
 
 void tmk_cmdlog_free(tmk_cmdlog* log);

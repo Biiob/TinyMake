@@ -3,7 +3,9 @@
 
 // Relative to the current directory
 #define TMK_BUILD_FILE "build.txt"
-#define TMK_CMDLOG_FILE ".tinymake_log"
+// All of TinyMake's state between builds
+#define TMK_STATE_DIR ".tinymake"
+#define TMK_CMDLOG_FILE TMK_STATE_DIR "/commands"
 #define TMK_OBJ_DIR "obj"
 #define TMK_BIN_DIR "bin"
 #define TMK_LIB_DIR "lib"

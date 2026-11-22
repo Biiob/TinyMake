@@ -16,6 +16,7 @@ void test_cmdlog_save_format(void);
 void test_cmdlog_save_empty(void);
 void test_cmdlog_save_replaces_existing(void);
 void test_cmdlog_save_invalid_path(void);
+void test_cmdlog_save_in_subdirectory(void);
 void test_cmdlog_round_trip(void);
 void test_cmdlog_free(void);
 

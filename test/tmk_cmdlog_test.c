@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "test_util.h"
@@ -13,7 +14,7 @@
 
 #define LOG_NAME "cmdlog"
 
-// Saves must never touch the real .tinymake_log of the project, so they all
+// Saves must never touch the real command log of the project, so they all
 // happen in a sandbox. Fails if a test left anything but LOG_NAME behind, like
 // a temporary file
 static void leave_sandbox(void)
@@ -330,6 +331,28 @@ void test_cmdlog_save_invalid_path(void)
   record(&log, "obj/a.o", "first");
   assert(!save(&log, "does_not_exist/" LOG_NAME));
 
+  tmk_cmdlog_free(&log);
+  leave_sandbox();
+}
+
+void test_cmdlog_save_in_subdirectory(void)
+{
+  // The temporary file goes next to the log, so only the log's directory needs
+  // to be writable, and nothing is left behind in it or in the current one
+  test_enter_sandbox();
+  assert(mkdir("state", 0755) == 0);
+  assert(chmod(".", 0555) == 0);
+
+  tmk_cmdlog log = {0};
+  record(&log, "obj/a.o", "clang -c src/a.c");
+  bool saved = save(&log, "state/" LOG_NAME);
+
+  assert(chmod(".", 0755) == 0);
+  assert(saved);
+  check_file("state/" LOG_NAME, HEADER "obj/a.o\tclang -c src/a.c\n");
+
+  unlink("state/" LOG_NAME);
+  assert(rmdir("state") == 0);
   tmk_cmdlog_free(&log);
   leave_sandbox();
 }

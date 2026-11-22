@@ -105,15 +105,17 @@ void tmk_cmdlog_record(tmk_cmdlog* log, const tmk_str* output,
 
 bool tmk_cmdlog_save(const tmk_cmdlog* log, const tmk_str* path)
 {
-  char tmp_file[] = ".tinymake_log_XXXXXX";
+  // Next to path, so that the rename stays within one directory
+  tmk_str tmp_path = tmk_str_create();
+  tmk_str_format(&tmp_path, "%s_XXXXXX", tmk_str_cstr(path));
+  char* tmp_file = tmk_str_data(&tmp_path);
 
   int tmp_fd = mkstemp(tmp_file);
   if (tmp_fd == -1)
   {
-    tmk_log_warn(
-        "Could not create a temporary command log in the current "
-        "directory: %s",
-        strerror(errno));
+    tmk_log_warn("Could not create a temporary command log next to '%s': %s",
+                 tmk_str_cstr(path), strerror(errno));
+    tmk_str_free(&tmp_path);
     return false;
   }
 
@@ -124,6 +126,7 @@ bool tmk_cmdlog_save(const tmk_cmdlog* log, const tmk_str* path)
                  strerror(errno));
     close(tmp_fd);
     unlink(tmp_file);
+    tmk_str_free(&tmp_path);
     return false;
   }
 
@@ -143,6 +146,7 @@ bool tmk_cmdlog_save(const tmk_cmdlog* log, const tmk_str* path)
                  strerror(errno));
     fclose(f);
     unlink(tmp_file);
+    tmk_str_free(&tmp_path);
     return false;
   }
 
@@ -151,6 +155,7 @@ bool tmk_cmdlog_save(const tmk_cmdlog* log, const tmk_str* path)
     tmk_log_warn("Could not write the temporary command log: %s",
                  strerror(errno));
     unlink(tmp_file);
+    tmk_str_free(&tmp_path);
     return false;
   }
 
@@ -159,9 +164,11 @@ bool tmk_cmdlog_save(const tmk_cmdlog* log, const tmk_str* path)
     tmk_log_warn("Could not replace command log '%s': %s", tmk_str_cstr(path),
                  strerror(errno));
     unlink(tmp_file);
+    tmk_str_free(&tmp_path);
     return false;
   }
 
+  tmk_str_free(&tmp_path);
   return true;
 }
 

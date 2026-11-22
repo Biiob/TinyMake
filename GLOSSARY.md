@@ -75,8 +75,12 @@ One run of TinyMake over the build file.
 A node whose output exists, is newer than all of its inputs and discovered inputs, and whose command matches the one in the command log. An up to date node is skipped; its negation is "not up to date".
 _Avoid_: fresh, stale, dirty, clean
 
+**State directory**:
+The `.tinymake/` directory holding everything TinyMake keeps between builds, such as the command log. It is created when the command log is saved.
+_Avoid_: cache directory; never shorten it to "state" (see **Node status**)
+
 **Command log**:
-The `.tinymake_log` file recording, for each output, the last command that built it successfully, so that an output is rebuilt when its command changes.
+The `.tinymake/commands` file recording, for each output, the last command that built it successfully, so that an output is rebuilt when its command changes.
 _Avoid_: log, cmdlog (except in code)
 
 **Node status**:

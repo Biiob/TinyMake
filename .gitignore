@@ -11,5 +11,5 @@ examples/
 
 setenv
 compile_flags.txt
-.tinymake_log
+.tinymake/
 .scratch/
