@@ -929,7 +929,9 @@ state_dir_blocked()
   tmk
   expect_success
   expect_exit_value bin/app 0
+  expect_output "[WARN] Could not create directory .tinymake"
   expect_output "Command log file was not updated"
+  expect_no_output "[ERROR]"
   expect_no_temp_files
 }
 

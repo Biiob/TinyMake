@@ -137,6 +137,11 @@ static bool create_output_dir(const tmk_node* node)
 {
   tmk_str dir = tmk_path_get_dir(&node->output);
   bool ok = tmk_fs_create_dir(&dir);
+  if (!ok)
+  {
+    tmk_log_error("Could not create directory %s: %s", tmk_str_cstr(&dir),
+                  strerror(errno));
+  }
   tmk_str_free(&dir);
 
   return ok;

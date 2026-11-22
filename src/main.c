@@ -1,3 +1,6 @@
+#include <errno.h>
+#include <string.h>
+
 #include "tmk_cli.h"
 #include "tmk_cmdlog.h"
 #include "tmk_config.h"
@@ -33,9 +36,16 @@ int main(int argc, char* argv[])
   ok = ok && tmk_graph_build(&graph, &config);
   ok = ok && tmk_engine_run(&graph, &state);
 
+  // Not being able to save the command log only costs a full rebuild next time
   tmk_str state_dir = tmk_str_from_cstr(TMK_STATE_DIR);
-  if (!tmk_fs_create_dir(&state_dir) ||
-      !tmk_cmdlog_save(&state.cmdlog, &cmdlog_path))
+  bool saved = tmk_fs_create_dir(&state_dir);
+  if (!saved)
+  {
+    tmk_log_warn("Could not create directory %s: %s", TMK_STATE_DIR,
+                 strerror(errno));
+  }
+  saved = saved && tmk_cmdlog_save(&state.cmdlog, &cmdlog_path);
+  if (!saved)
   {
     tmk_log_warn("Command log file was not updated");
   }
